@@ -1,0 +1,42 @@
+import { Controller, Get, Post, Query, Body } from '@nestjs/common';
+import { InventoryService } from './services/inventory.service';
+
+@Controller('inventory')
+export class InventoryController {
+  constructor(private readonly inventoryService: InventoryService) {}
+
+  @Get('stores')
+  async getStores() {
+    const stores = await this.inventoryService.getStores();
+    return {
+      status: 'success',
+      total: stores.length,
+      data: stores,
+    };
+  }
+
+  @Get('stock')
+  async getStock(
+    @Query('storeId') storeId: string,
+    @Query('variantId') variantId: string,
+  ) {
+    const stock = await this.inventoryService.getStock(storeId, variantId);
+    return {
+      status: 'success',
+      data: stock,
+    };
+  }
+
+  @Post('reserve')
+  async reserveStock(
+    @Body('storeId') storeId: string,
+    @Body('variantId') variantId: string,
+    @Body('quantity') quantity: number,
+  ) {
+    await this.inventoryService.reserveStock(storeId, variantId, quantity || 1);
+    return {
+      status: 'success',
+      message: `Đã giữ chỗ thành công ${quantity || 1} sản phẩm tại kho.`,
+    };
+  }
+}
