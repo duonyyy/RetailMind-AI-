@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InternalAgentController } from './internal-agent.controller';
 import { InternalAgentService } from './internal-agent.service';
-import { CatalogService } from '../catalog/catalog.service';
-import { InventoryService } from '../inventory/services/inventory.service';
-import { OrdersService } from '../orders/orders.service';
+import { CatalogService } from '../catalog/public-api';
+import { InventoryService } from '../inventory/public-api';
+import { OrdersService } from '../orders/public-api';
 import { ConfigService } from '@nestjs/config';
 import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
 import { ForbiddenException, ExecutionContext } from '@nestjs/common';

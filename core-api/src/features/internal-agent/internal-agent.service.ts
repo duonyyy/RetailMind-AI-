@@ -2,10 +2,14 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
-import { CatalogService } from '../catalog/catalog.service';
-import { InventoryService } from '../inventory/services/inventory.service';
-import { OrdersService } from '../orders/orders.service';
+import { CatalogService } from '../catalog/public-api';
+import { InventoryService } from '../inventory/public-api';
+import { OrdersService } from '../orders/public-api';
+import { KnowledgeService } from '../knowledge/public-api';
+import { SupportService } from '../support/public-api';
+import { CustomersService } from '../customers/public-api';
 import Decimal from 'decimal.js';
 
 export interface CartItemRecord {
@@ -35,6 +39,9 @@ export class InternalAgentService {
     private readonly catalogService: CatalogService,
     private readonly inventoryService: InventoryService,
     private readonly ordersService: OrdersService,
+    @Optional() private readonly knowledgeService?: KnowledgeService,
+    @Optional() private readonly supportService?: SupportService,
+    @Optional() private readonly customersService?: CustomersService,
   ) {}
 
   /**
@@ -140,6 +147,15 @@ export class InternalAgentService {
    * Tool 5: Tra cứu chính sách bảo hành, đổi trả & hạn mức tài chính
    */
   async searchPolicy(args: { query: string; top_k?: number }) {
+    if (this.knowledgeService) {
+      const results = await this.knowledgeService.searchPolicy(args.query || '', args.top_k || 5);
+      return {
+        query: args.query,
+        count: results.length,
+        policies: results,
+      };
+    }
+
     const policies = [
       {
         id: 'POL_2026_RETURN',
@@ -345,6 +361,21 @@ export class InternalAgentService {
     if (!args.title || !args.description) {
       throw new BadRequestException('Tiêu đề và nội dung khiếu nại là bắt buộc.');
     }
+
+    if (this.supportService) {
+      const created = await this.supportService.createTicket(customerId || 'usr-customer-01', {
+        orderId: args.order_id,
+        title: args.title,
+        description: args.description,
+      });
+      return {
+        status: 'success',
+        ticket_id: created.ticketCode,
+        message: `Phiếu hỗ trợ ${created.ticketCode} đã được tạo thành công và chuyển đến bộ phận CSKH MWG.`,
+        ticket: created,
+      };
+    }
+
     const ticketId = `TCK-${Date.now().toString().slice(-6)}`;
     const ticket: SupportTicketRecord = {
       id: ticketId,
@@ -396,6 +427,40 @@ export class InternalAgentService {
       note: agreedRate.greaterThan(ceilingRate)
         ? 'Mức thỏa thuận vượt trần 8%, hệ thống tự động điều chỉnh về mức trần luật định.'
         : 'Mức phạt hợp lệ theo thỏa thuận trong giới hạn trần luật định.',
+    };
+  }
+
+  /**
+   * Tool 14: Quản lý danh sách sản phẩm yêu thích (Favorites)
+   */
+  async manageFavorite(
+    customerId: string,
+    args: { sku?: string; variant_id?: string; action?: 'add' | 'remove' | 'toggle' },
+  ) {
+    const targetSku = args.sku || args.variant_id;
+    if (!targetSku) {
+      throw new BadRequestException('Mã SKU hoặc variant_id là bắt buộc.');
+    }
+    const action = args.action || 'toggle';
+
+    if (this.customersService) {
+      const toggled = await this.customersService.toggleFavorite(customerId, targetSku);
+      return {
+        status: 'success',
+        customer_id: customerId,
+        sku: targetSku,
+        action,
+        is_favorited: toggled.isFavorited,
+        message: `Đã cập nhật danh sách yêu thích cho sản phẩm [${targetSku}].`,
+      };
+    }
+
+    return {
+      status: 'success',
+      customer_id: customerId,
+      sku: targetSku,
+      action,
+      message: `Đã cập nhật danh sách yêu thích cho sản phẩm [${targetSku}].`,
     };
   }
 }

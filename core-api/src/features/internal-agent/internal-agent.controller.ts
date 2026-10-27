@@ -119,4 +119,15 @@ export class InternalAgentController {
     const res = await this.agentService.calculateContractPenalty(body || {});
     return { status: 'success', tool: 'penalty_calculate', data: res };
   }
+
+  // 14. Quản lý sản phẩm yêu thích (Favorites)
+  @Post(['manage-favorite', 'manage_favorite'])
+  async manageFavorite(
+    @Body() body: any,
+    @Headers('x-customer-id') customerIdHeader?: string,
+  ) {
+    const customerId = customerIdHeader || body.customer_id || 'usr-customer-01';
+    const res = await this.agentService.manageFavorite(customerId, body || {});
+    return { status: 'success', tool: 'manage_favorite', data: res };
+  }
 }

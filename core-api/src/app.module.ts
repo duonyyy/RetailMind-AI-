@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CatalogModule } from './features/catalog/public-api';
@@ -10,6 +11,13 @@ import { RedisModule } from './shared/redis/redis.module';
 import { MinioStorageModule } from './shared/storage/minio.module';
 import { QueueConfigModule } from './shared/queue/queue.module';
 import { IngestionFeatureModule } from './features/ingestion/public-api';
+import { CustomersModule } from './features/customers/public-api';
+import { KnowledgeModule } from './features/knowledge/public-api';
+import { SupportModule } from './features/support/public-api';
+import { AuditModule } from './features/audit/public-api';
+import { CorrelationIdMiddleware } from './shared/middleware/correlation-id.middleware';
+import { TransformResponseInterceptor } from './shared/interceptors/transform-response.interceptor';
+import { AllExceptionsFilter } from './shared/filters/all-exceptions.filter';
 
 const isDbEnabled = process.env.ENABLE_POSTGRES === 'true';
 
@@ -39,8 +47,25 @@ const isDbEnabled = process.env.ENABLE_POSTGRES === 'true';
     InternalAgentModule,
     AuthModule,
     IngestionFeatureModule,
+    CustomersModule,
+    KnowledgeModule,
+    SupportModule,
+    AuditModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TransformResponseInterceptor,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: AllExceptionsFilter,
+    },
+  ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}
