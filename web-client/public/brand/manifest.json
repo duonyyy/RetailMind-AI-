@@ -1,0 +1,30 @@
+{
+  "brand": "ThiSmart",
+  "concept": "03 — Minimal Tech",
+  "asset_format": "PNG, ICO",
+  "assets": {
+    "logo-horizontal-light.png": "Default horizontal brand logo on light backgrounds",
+    "logo-horizontal-tagline-light.png": "Horizontal logo with tagline for light backgrounds",
+    "logo-horizontal-tagline-dark.png": "Horizontal logo with tagline for dark backgrounds",
+    "logo-mark.png": "Transparent standalone brand mark for icons and compact contexts",
+    "app-icon.png": "Large social/product app tile with background (1024x1024)",
+    "favicon.ico": "Browser multi-resolution icon (16/32/48)",
+    "favicon-16.png": "Small browser icon",
+    "favicon-32.png": "Browser icon",
+    "favicon-48.png": "Small device icon",
+    "favicon-64.png": "Small device icon",
+    "favicon-192.png": "PWA icon",
+    "favicon-512.png": "PWA icon",
+    "apple-touch-icon.png": "iOS home-screen icon (180x180)",
+    "icon.png": "Large transparent icon (1024x1024)",
+    "og-image.png": "Open Graph sharing image (1200x630)"
+  },
+  "colors": {
+    "primary": "#2563EB",
+    "accent": "#06B6D4",
+    "ink": "#0F172A",
+    "surface": "#F8FAFC"
+  },
+  "slogan": "Thi thông minh. Đánh giá chính xác.",
+  "note": "Brand concepts are AI-generated PNGs, not native vector artwork. Visual review and source vector reconstruction are recommended before trademark-scale production use."
+}

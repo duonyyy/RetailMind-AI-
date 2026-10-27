@@ -1,0 +1,136 @@
+/**
+ * ThiSmart Design System — Brand Tokens
+ * Source: design-system/styles/tokens.css, docs/BRAND_SPEC.md, references/01-brand-guideline.png
+ */
+:root {
+  /* Brand Core Colors */
+  --ts-primary: #2563eb;
+  --ts-primary-hover: #1d4ed8;
+  --ts-primary-soft: #eff6ff;
+  --ts-cyan: #06b6d4;
+  --ts-cyan-hover: #0891b2;
+  --ts-cyan-soft: #ecfeff;
+  --ts-dark: #0f172a;
+  --ts-light: #f8fafc;
+  --ts-surface: #ffffff;
+  --ts-border: #dbeafe;
+  --ts-border-strong: #bfd9ff;
+  --ts-muted: #64748b;
+  --ts-muted-light: #94a3b8;
+
+  /* Functional Status Colors (Refined Academic SaaS Palette: Jade, Honey Amber, Rose Crimson) */
+  --ts-success: #059669;
+  --ts-success-hover: #047857;
+  --ts-success-soft: #ecfdf5;
+  --ts-success-border: #a7f3d0;
+  --ts-success-text: #065f46;
+  --ts-success-subtle: rgba(5, 150, 105, 0.08);
+
+  --ts-warning: #d97706;
+  --ts-warning-hover: #b45309;
+  --ts-warning-soft: #fffbeb;
+  --ts-warning-border: #fde68a;
+  --ts-warning-text: #92400e;
+  --ts-warning-subtle: rgba(217, 119, 6, 0.08);
+
+  --ts-danger: #e11d48;
+  --ts-danger-hover: #be123c;
+  --ts-danger-soft: #fff1f2;
+  --ts-danger-border: #fecdd3;
+  --ts-danger-text: #9f1239;
+  --ts-danger-subtle: rgba(225, 29, 72, 0.08);
+
+  /* Gradients */
+  --ts-gradient: linear-gradient(110deg, #2563eb 0%, #087cf5 55%, #06b6d4 100%);
+  --ts-gradient-cyan: linear-gradient(120deg, #2563eb 0%, #06b6d4 100%);
+  --ts-gradient-subtle: linear-gradient(180deg, rgba(239, 246, 255, 0.7) 0%, rgba(248, 250, 252, 0.9) 100%);
+
+  /* Typography */
+  --ts-font: "Inter", var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* Easing */
+  --ts-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Border Radii (Enterprise 2026: Disciplined Geometry 4px - 6px - 8px) */
+  --ts-radius-xs: 4px;
+  --ts-radius-sm: 4px;
+  --ts-radius-md: 6px;
+  --ts-radius-lg: 8px;
+  --ts-radius-full: 9999px;
+
+  /* Shadows (Enterprise 2026: Subtle, grounded elevation) */
+  --ts-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --ts-shadow-soft: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --ts-shadow-hover: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --ts-shadow-glow: 0 0 0 1px rgba(37, 99, 235, 0.15), 0 2px 8px rgba(37, 99, 235, 0.12);
+  --ts-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05);
+
+  /* Motion Durations */
+  --ts-motion-fast: 120ms;
+  --ts-motion-normal: 200ms;
+  --ts-motion-drawer: 300ms;
+  --ts-motion-intro: 600ms;
+}
+
+/* Dark theme tokens */
+.dark {
+  --ts-primary: #3b82f6;
+  --ts-primary-hover: #60a5fa;
+  --ts-primary-soft: #1e3a5f;
+  --ts-cyan: #22d3ee;
+  --ts-cyan-hover: #67e8f9;
+  --ts-cyan-soft: #083344;
+  --ts-dark: #0f172a;
+  --ts-light: #0b1220;
+  --ts-surface: #111c32;
+  --ts-border: #1e293b;
+  --ts-border-strong: #334155;
+  --ts-muted: #94a3b8;
+  --ts-muted-light: #64748b;
+
+  --ts-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --ts-shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --ts-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --ts-shadow-glow: 0 0 0 1px rgba(59, 130, 246, 0.25), 0 2px 8px rgba(59, 130, 246, 0.2);
+
+  /* Functional Status Colors (Dark theme) */
+  --ts-success: #10b981;
+  --ts-success-hover: #34d399;
+  --ts-success-soft: rgba(16, 185, 129, 0.12);
+  --ts-success-border: rgba(52, 211, 153, 0.28);
+  --ts-success-text: #6ee7b7;
+  --ts-success-subtle: rgba(16, 185, 129, 0.15);
+
+  --ts-warning: #f59e0b;
+  --ts-warning-hover: #fbbf24;
+  --ts-warning-soft: rgba(245, 158, 11, 0.12);
+  --ts-warning-border: rgba(251, 191, 36, 0.28);
+  --ts-warning-text: #fde68a;
+  --ts-warning-subtle: rgba(245, 158, 11, 0.15);
+
+  --ts-danger: #f43f5e;
+  --ts-danger-hover: #fb7185;
+  --ts-danger-soft: rgba(244, 63, 94, 0.12);
+  --ts-danger-border: rgba(251, 113, 133, 0.28);
+  --ts-danger-text: #fecdd3;
+  --ts-danger-subtle: rgba(244, 63, 94, 0.15);
+}
+
+/* Reusable Semantic Utility Classes */
+.ts-badge-success {
+  background-color: var(--ts-success-soft);
+  color: var(--ts-success-text);
+  border: 1px solid var(--ts-success-border);
+}
+
+.ts-badge-warning {
+  background-color: var(--ts-warning-soft);
+  color: var(--ts-warning-text);
+  border: 1px solid var(--ts-warning-border);
+}
+
+.ts-badge-danger {
+  background-color: var(--ts-danger-soft);
+  color: var(--ts-danger-text);
+  border: 1px solid var(--ts-danger-border);
+}

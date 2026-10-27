@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0F172A"/>
+  <!-- Stylized Geometric T and Exam Layers -->
+  <path d="M14 16H50V24H36V48H28V24H14V16Z" fill="url(#brandGrad)"/>
+  <!-- Exam Paper Line Marks -->
+  <rect x="20" y="32" width="6" height="3" rx="1.5" fill="#38BDF8"/>
+  <rect x="38" y="32" width="6" height="3" rx="1.5" fill="#38BDF8"/>
+  <rect x="20" y="38" width="6" height="3" rx="1.5" fill="#06B6D4"/>
+  <rect x="38" y="38" width="6" height="3" rx="1.5" fill="#06B6D4"/>
+</svg>

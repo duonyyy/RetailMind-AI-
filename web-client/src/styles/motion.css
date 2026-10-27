@@ -1,0 +1,235 @@
+/**
+ * ThiSmart Design System — Motion System
+ * Source: design-system/styles/motion.css, docs/MOTION_SPEC.md, references/03-motion-system.png
+ */
+
+/* M1. Logo Reveal Keyframes (~600ms total timeline, easing cubic-bezier(0.22, 1, 0.36, 1)) */
+@keyframes ts-logo-reveal {
+  0% {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(10px) scale(0.94);
+  }
+  35% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+
+@keyframes ts-icon-reveal {
+  0% {
+    opacity: 0;
+    filter: blur(8px);
+    transform: scale(0.75);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+@keyframes ts-wordmark-reveal {
+  0%,
+  38% {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.ts-logo-full {
+  animation: ts-logo-reveal var(--ts-motion-intro) var(--ts-ease-out) both;
+}
+
+.ts-logo-mark {
+  animation: ts-icon-reveal 200ms var(--ts-ease-out) both;
+}
+
+.ts-logo-wordmark {
+  animation: ts-wordmark-reveal 600ms var(--ts-ease-out) both;
+}
+
+/* M2. CTA Button Hover & Press */
+.ts-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 0.8rem 1.6rem;
+  border: 1px solid transparent;
+  border-radius: var(--ts-radius-full);
+  background: var(--ts-gradient);
+  color: #ffffff;
+  font-family: var(--ts-font);
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.25;
+  box-shadow: var(--ts-shadow-soft);
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform var(--ts-motion-normal) var(--ts-ease-out),
+              box-shadow var(--ts-motion-normal) var(--ts-ease-out),
+              filter var(--ts-motion-normal) var(--ts-ease-out);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ts-cta:hover {
+  transform: scale(1.03);
+  box-shadow: var(--ts-shadow-hover);
+  filter: brightness(1.03);
+}
+
+.ts-cta:active {
+  transform: scale(0.97);
+  box-shadow: 0 3px 10px rgb(37 99 235 / 14%);
+  transition-duration: var(--ts-motion-fast);
+}
+
+.ts-cta:focus-visible,
+.ts-drawer-close:focus-visible,
+.ts-drawer-trigger:focus-visible {
+  outline: 3px solid var(--ts-cyan);
+  outline-offset: 4px;
+}
+
+.ts-cta:disabled,
+.ts-cta[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+/* Secondary CTA variant */
+.ts-cta-secondary {
+  background: #ffffff;
+  color: var(--ts-primary);
+  border: 1.5px solid var(--ts-border);
+  box-shadow: var(--ts-shadow-card);
+}
+
+.ts-cta-secondary:hover {
+  background: var(--ts-primary-soft);
+  border-color: var(--ts-primary);
+  color: var(--ts-primary-hover);
+  box-shadow: var(--ts-shadow-soft);
+}
+
+/* M3. Feature Card Hover & Glow */
+.ts-feature-card {
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-md);
+  background: var(--ts-surface);
+  box-shadow: var(--ts-shadow-soft);
+  transition: transform var(--ts-motion-normal) var(--ts-ease-out),
+              box-shadow var(--ts-motion-normal) var(--ts-ease-out),
+              border-color var(--ts-motion-normal) var(--ts-ease-out);
+}
+
+.ts-feature-card:hover,
+.ts-feature-card:focus-within {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: var(--ts-shadow-hover);
+  border-color: var(--ts-border-strong);
+}
+
+.ts-feature-card[data-selected="true"] {
+  transform: translateY(-8px) scale(1.03);
+  box-shadow: var(--ts-shadow-glow);
+  border-color: var(--ts-cyan);
+}
+
+/* M4. Mobile Menu Slide-in (Right to Left) */
+.ts-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgb(15 23 42 / 45%);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--ts-motion-drawer) var(--ts-ease-out),
+              visibility var(--ts-motion-drawer) var(--ts-ease-out);
+}
+
+.ts-drawer-panel {
+  position: fixed;
+  z-index: 101;
+  inset: 0 0 0 auto;
+  width: min(88vw, 360px);
+  background: #ffffff;
+  box-shadow: -10px 0 50px rgb(15 23 42 / 20%);
+  transform: translateX(100%);
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform var(--ts-motion-drawer) var(--ts-ease-out),
+              visibility var(--ts-motion-drawer) var(--ts-ease-out);
+}
+
+.dark .ts-drawer-panel {
+  background: #0f172a;
+  box-shadow: -10px 0 50px rgb(0 0 0 / 50%);
+}
+
+.ts-drawer-overlay[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.ts-drawer-panel[data-open="true"] {
+  transform: translateX(0);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Gentle Floating Animation for 3D Elements */
+@keyframes ts-float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(1deg);
+  }
+}
+
+.animate-float {
+  animation: ts-float 5s ease-in-out infinite;
+}
+
+/* Reduced Motion Override (Mandatory Accessibility) */
+@media (prefers-reduced-motion: reduce) {
+  .ts-logo-full,
+  .ts-logo-mark,
+  .ts-logo-wordmark,
+  .animate-float {
+    animation: none !important;
+  }
+  .ts-cta,
+  .ts-feature-card,
+  .ts-drawer-overlay,
+  .ts-drawer-panel {
+    transition-duration: 0.01ms !important;
+  }
+  .ts-cta:hover,
+  .ts-cta:active,
+  .ts-feature-card:hover,
+  .ts-feature-card:focus-within,
+  .ts-feature-card[data-selected="true"] {
+    transform: none !important;
+  }
+}
