@@ -1,119 +1,201 @@
-"use client";
+'use client';
 
-import React, { useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import Image from "next/image";
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import Image from 'next/image';
 import {
   MessageSquareText,
   Laptop,
+  Scale,
   ShoppingCart,
+  CreditCard,
   PackageCheck,
+  ShieldCheck,
   Headphones,
+  UserCheck,
+  LayoutDashboard,
+  Boxes,
   Warehouse,
+  ShoppingBag,
   ShieldAlert,
   BookOpenCheck,
   Activity,
   Tag,
   FileSpreadsheet,
+  Building2,
+  Settings,
+  LogIn,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
-  Sparkles,
-  Layers,
-  CheckCircle2,
-} from "lucide-react";
+} from 'lucide-react';
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
   badge?: string;
-  badgeColor?: "blue" | "emerald" | "amber" | "rose";
-  role: "customer" | "admin";
+  badgeColor?: 'blue' | 'emerald' | 'amber' | 'rose';
+  role: 'customer' | 'admin' | 'utility';
 }
 
 const NAV_ITEMS: NavItem[] = [
-  // Customer Persona
+  // Customer & Guest Persona (Commerce Shell: SCR-01 -> SCR-13)
   {
-    label: "Trợ lý AI Tư vấn Laptop",
-    href: "/",
+    label: 'Trợ lý AI Tư vấn (SCR-02/06)',
+    href: '/',
     icon: MessageSquareText,
-    badge: "Agentic",
-    badgeColor: "blue",
-    role: "customer",
+    badge: 'SSE',
+    badgeColor: 'blue',
+    role: 'customer',
   },
   {
-    label: "Danh mục Laptop MWG",
-    href: "/catalog",
+    label: 'Danh mục Laptop (SCR-03)',
+    href: '/catalog',
     icon: Laptop,
-    badge: "SSOT",
-    badgeColor: "blue",
-    role: "customer",
+    badge: 'SSOT',
+    badgeColor: 'blue',
+    role: 'customer',
   },
   {
-    label: "Giỏ hàng & Chốt đơn",
-    href: "/cart",
+    label: 'So sánh đối đầu 4 máy (SCR-05)',
+    href: '/compare',
+    icon: Scale,
+    role: 'customer',
+  },
+  {
+    label: 'Giỏ hàng BigInt (SCR-07)',
+    href: '/cart',
     icon: ShoppingCart,
-    role: "customer",
+    role: 'customer',
   },
   {
-    label: "Tra cứu Đơn & Bảo hành",
-    href: "/orders",
+    label: 'Đặt hàng Khóa tồn (SCR-08)',
+    href: '/checkout',
+    icon: CreditCard,
+    badge: '10m Lock',
+    badgeColor: 'emerald',
+    role: 'customer',
+  },
+  {
+    label: 'Đơn hàng 5 bước (SCR-10)',
+    href: '/orders',
     icon: PackageCheck,
-    role: "customer",
+    role: 'customer',
   },
   {
-    label: "Hỗ trợ & CSKH",
-    href: "/support",
+    label: 'Cổng Bảo hành 30 ngày (SCR-11)',
+    href: '/warranty',
+    icon: ShieldCheck,
+    role: 'customer',
+  },
+  {
+    label: 'Hỗ trợ & Ticket (SCR-12)',
+    href: '/support',
     icon: Headphones,
-    role: "customer",
+    role: 'customer',
+  },
+  {
+    label: 'Hồ sơ & Quyền PII (SCR-13)',
+    href: '/profile',
+    icon: UserCheck,
+    badge: 'NĐ 13',
+    badgeColor: 'emerald',
+    role: 'customer',
   },
 
-  // Admin Persona
+  // Admin Persona (Admin Ops Shell: SCR-14 -> SCR-24)
   {
-    label: "Tồn kho Đa Chi nhánh",
-    href: "/admin/inventory",
+    label: 'Tổng quan & FinOps (SCR-14)',
+    href: '/admin/dashboard',
+    icon: LayoutDashboard,
+    badge: 'KPIs',
+    badgeColor: 'blue',
+    role: 'admin',
+  },
+  {
+    label: 'Quản lý Sản phẩm PIM (SCR-15)',
+    href: '/admin/products',
+    icon: Boxes,
+    role: 'admin',
+  },
+  {
+    label: 'Tồn kho Đa Chi nhánh (SCR-16)',
+    href: '/admin/inventory',
     icon: Warehouse,
-    badge: "Real-time",
-    badgeColor: "emerald",
-    role: "admin",
+    badge: 'ACID',
+    badgeColor: 'emerald',
+    role: 'admin',
   },
   {
-    label: "Cổng Duyệt HITL Gate",
-    href: "/admin/hitl",
+    label: 'Quản lý Đơn hàng OMS (SCR-17)',
+    href: '/admin/orders',
+    icon: ShoppingBag,
+    role: 'admin',
+  },
+  {
+    label: 'Cổng Duyệt HITL Gate (SCR-18)',
+    href: '/admin/hitl',
     icon: ShieldAlert,
-    badge: "Bồi hoàn",
-    badgeColor: "amber",
-    role: "admin",
+    badge: 'HITL',
+    badgeColor: 'amber',
+    role: 'admin',
   },
   {
-    label: "Tài liệu Tri thức RAG",
-    href: "/admin/knowledge",
+    label: 'Tri thức RAG & SHA-256 (SCR-19)',
+    href: '/admin/knowledge',
     icon: BookOpenCheck,
-    badge: "Qdrant",
-    badgeColor: "blue",
-    role: "admin",
+    badge: 'Qdrant',
+    badgeColor: 'blue',
+    role: 'admin',
   },
   {
-    label: "Giám sát Phoenix & Traces",
-    href: "/admin/observability",
-    icon: Activity,
-    badge: "Arize",
-    badgeColor: "rose",
-    role: "admin",
-  },
-  {
-    label: "Khuyến mãi & Quy tắc Giá",
-    href: "/admin/promotions",
+    label: 'Khuyến mãi & Giá (SCR-20)',
+    href: '/admin/promotions',
     icon: Tag,
-    role: "admin",
+    role: 'admin',
   },
   {
-    label: "Audit Logs & RBAC",
-    href: "/admin/audit-logs",
+    label: 'Giám sát Phoenix & OTel (SCR-21)',
+    href: '/admin/observability',
+    icon: Activity,
+    badge: 'Arize',
+    badgeColor: 'rose',
+    role: 'admin',
+  },
+  {
+    label: 'Sổ cái SHA-256 & RBAC (SCR-22)',
+    href: '/admin/audit-logs',
     icon: FileSpreadsheet,
-    role: "admin",
+    role: 'admin',
+  },
+  {
+    label: 'Siêu thị MWG Hubs (SCR-23)',
+    href: '/admin/stores',
+    icon: Building2,
+    role: 'admin',
+  },
+  {
+    label: 'Cấu hình Chống chịu (SCR-24)',
+    href: '/admin/settings',
+    icon: Settings,
+    role: 'admin',
+  },
+
+  // Utility & Auth Shell (SCR-01, SCR-25..27)
+  {
+    label: 'Cổng Đăng nhập Auth (SCR-01)',
+    href: '/login',
+    icon: LogIn,
+    role: 'utility',
+  },
+  {
+    label: 'Sức khỏe Hạ tầng (SCR-27)',
+    href: '/status',
+    icon: Activity,
+    badge: '100%',
+    badgeColor: 'emerald',
+    role: 'utility',
   },
 ];
 
@@ -121,36 +203,37 @@ export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
 
-  const customerItems = NAV_ITEMS.filter((item) => item.role === "customer");
-  const adminItems = NAV_ITEMS.filter((item) => item.role === "admin");
+  const customerItems = NAV_ITEMS.filter((item) => item.role === 'customer');
+  const adminItems = NAV_ITEMS.filter((item) => item.role === 'admin');
+  const utilityItems = NAV_ITEMS.filter((item) => item.role === 'utility');
 
-  const getBadgeClass = (color?: "blue" | "emerald" | "amber" | "rose") => {
+  const getBadgeClass = (color?: 'blue' | 'emerald' | 'amber' | 'rose') => {
     switch (color) {
-      case "emerald":
-        return "bg-emerald-50 text-emerald-700 border-emerald-200/80";
-      case "amber":
-        return "bg-amber-50 text-amber-700 border-amber-200/80";
-      case "rose":
-        return "bg-rose-50 text-rose-700 border-rose-200/80";
-      case "blue":
+      case 'emerald':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200/80';
+      case 'amber':
+        return 'bg-amber-50 text-amber-700 border-amber-200/80';
+      case 'rose':
+        return 'bg-rose-50 text-rose-700 border-rose-200/80';
+      case 'blue':
       default:
-        return "bg-blue-50 text-blue-700 border-blue-200/80";
+        return 'bg-blue-50 text-blue-700 border-blue-200/80';
     }
   };
 
   const renderNavGroup = (title: string, items: NavItem[]) => (
-    <div className="mb-5">
+    <div className="mb-4">
       {!collapsed && (
-        <div className="px-3 mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
           {title}
         </div>
       )}
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive =
-            item.href === "/"
-              ? pathname === "/"
+            item.href === '/'
+              ? pathname === '/'
               : pathname.startsWith(item.href);
 
           return (
@@ -158,15 +241,15 @@ export function AppSidebar() {
               key={item.href}
               href={item.href}
               title={collapsed ? item.label : undefined}
-              className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group relative ${
+              className={`flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all group relative ${
                 isActive
-                  ? "bg-blue-600 text-white shadow-sm shadow-blue-500/20 font-semibold"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/90"
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/20 font-semibold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/90'
               }`}
             >
               <Icon
                 className={`w-4 h-4 shrink-0 transition-transform group-hover:scale-110 ${
-                  isActive ? "text-white" : "text-slate-500 group-hover:text-blue-600"
+                  isActive ? 'text-white' : 'text-slate-500 group-hover:text-blue-600'
                 }`}
               />
               {!collapsed && (
@@ -176,7 +259,7 @@ export function AppSidebar() {
                     <span
                       className={`text-[10px] px-1.5 py-0.5 rounded-full border font-bold ${
                         isActive
-                          ? "bg-white/20 text-white border-white/30"
+                          ? 'bg-white/20 text-white border-white/30'
                           : getBadgeClass(item.badgeColor)
                       }`}
                     >
@@ -195,12 +278,12 @@ export function AppSidebar() {
   return (
     <aside
       className={`bg-white border-r border-slate-200/90 flex flex-col justify-between shrink-0 h-screen sticky top-0 transition-all duration-200 select-none z-30 ${
-        collapsed ? "w-16" : "w-64"
+        collapsed ? 'w-16' : 'w-64'
       }`}
     >
       {/* Top Header & Brand */}
-      <div>
-        <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200/80">
+      <div className="flex flex-col min-h-0 flex-1">
+        <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200/80 shrink-0">
           <Link href="/" className="flex items-center gap-2.5 overflow-hidden group">
             <div className="relative w-9 h-9 shrink-0 rounded-xl overflow-hidden shadow-xs border border-blue-100 flex items-center justify-center bg-gradient-to-br from-blue-600 to-cyan-500">
               <Image
@@ -218,7 +301,7 @@ export function AppSidebar() {
                   RetailMind<span className="text-blue-600">.AI</span>
                 </span>
                 <span className="text-[10px] text-slate-400 font-semibold tracking-wide uppercase leading-none">
-                  MWG Intelligence
+                  27 Screens • MWG
                 </span>
               </div>
             )}
@@ -227,29 +310,30 @@ export function AppSidebar() {
             type="button"
             onClick={() => setCollapsed(!collapsed)}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
-            aria-label={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+            aria-label={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
           >
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
           </button>
         </div>
 
         {/* Navigation Items */}
-        <div className="p-3 overflow-y-auto max-h-[calc(100vh-160px)]">
-          {renderNavGroup("Khách Hàng (Customer)", customerItems)}
-          {renderNavGroup("Quản Trị Viên (Admin)", adminItems)}
+        <div className="p-3 overflow-y-auto flex-1">
+          {renderNavGroup('Commerce Shell (SCR-01..13)', customerItems)}
+          {renderNavGroup('Admin Ops Shell (SCR-14..24)', adminItems)}
+          {renderNavGroup('Auth & System (SCR-25..27)', utilityItems)}
         </div>
       </div>
 
       {/* Bottom Service Status */}
-      <div className="p-3 border-t border-slate-200/80 bg-slate-50/60">
+      <div className="p-3 border-t border-slate-200/80 bg-slate-50/60 shrink-0">
         {!collapsed ? (
-          <div className="space-y-2 text-xs">
+          <div className="space-y-1.5 text-xs">
             <div className="flex items-center justify-between text-slate-600">
               <span className="flex items-center gap-1.5 font-medium">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                NestJS Core
+                NestJS Core API
               </span>
-              <span className="text-[10px] text-slate-400 font-mono">Port 3001</span>
+              <span className="text-[10px] text-slate-400 font-mono">Port 4000</span>
             </div>
             <div className="flex items-center justify-between text-slate-600">
               <span className="flex items-center gap-1.5 font-medium">
@@ -257,10 +341,6 @@ export function AppSidebar() {
                 LangGraph Agent
               </span>
               <span className="text-[10px] text-slate-400 font-mono">Port 8000</span>
-            </div>
-            <div className="pt-1 text-[11px] text-slate-400 flex items-center justify-between">
-              <span>Nguồn: PostgreSQL SSOT</span>
-              <span className="font-mono">v1.0-2026</span>
             </div>
           </div>
         ) : (

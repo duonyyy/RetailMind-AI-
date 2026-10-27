@@ -5,11 +5,11 @@ const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || 'http://localhost:4000';
 const AGENT_URL = process.env.AGENT_INTERNAL_URL || 'http://localhost:8000';
 
 /**
- * RetailMind AI — Enterprise BFF Reverse Proxy Route Handler
- * 1. Che giấu Access Token an toàn phía Server qua HttpOnly Cookie.
- * 2. Phân luồng thông minh: hội thoại -> Python AI Agent, nghiệp vụ -> NestJS Backend.
- * 3. Hỗ trợ truyền dòng SSE streaming trực tiếp với duplex: 'half'.
- * 4. Tự động chuyển tiếp header x-total-count phục vụ phân trang.
+ * RetailMind AI — Enterprise BFF Reverse Proxy Route Handler (ADR-009)
+ * 1. Conceals JWT Access Token server-side via HttpOnly Cookie (`retailmind_access_token` / `access_token`).
+ * 2. Smart Routing: conversations/chat/hitl/finops -> Python LangGraph Agent (:8000), commerce/auth/admin -> NestJS Core (:4000).
+ * 3. Streams SSE tokens directly with Node.js `duplex: 'half'`.
+ * 4. Exposes `x-total-count` and `x-trace-id` headers to the client.
  */
 async function catchAll(
   req: NextRequest,
@@ -17,9 +17,11 @@ async function catchAll(
 ) {
   const path = params.path.join('/');
   const cookieStore = cookies();
-  const token = cookieStore.get('retailmind_access_token')?.value;
+  const token =
+    cookieStore.get('retailmind_access_token')?.value ||
+    cookieStore.get('access_token')?.value;
 
-  // 1. Phân luồng endpoint thông minh
+  // 1. Smart endpoint routing
   const isAgentRoute =
     path.startsWith('conversations') ||
     path.startsWith('chat') ||
@@ -34,13 +36,14 @@ async function catchAll(
     ? `${targetBase}/api/${path}${queryString ? `?${queryString}` : ''}`
     : `${targetBase}/api/v1/${path}${queryString ? `?${queryString}` : ''}`;
 
-  // 2. Whitelist Headers an toàn (chuyển tiếp Idempotency-Key và Trace Headers)
+  // 2. Whitelist headers (forward Idempotency-Key & OpenTelemetry Trace Headers)
   const forwardedHeaders = new Headers();
   const whitelist = [
     'content-type',
     'accept',
     'accept-language',
     'x-trace-id',
+    'x-correlation-id',
     'idempotency-key',
     'x-idempotency-key',
     'x-customer-id',
@@ -50,13 +53,13 @@ async function catchAll(
     if (val) forwardedHeaders.set(headerName, val);
   });
 
-  // 3. Đính kèm Bearer Token từ Server Cookie
+  // 3. Attach Bearer Token from HttpOnly Server Cookie
   if (token) {
     forwardedHeaders.set('Authorization', `Bearer ${token}`);
   }
 
   try {
-    // 4. Stream với duplex: 'half' cho Node.js fetch
+    // 4. Stream with duplex: 'half' for Node.js fetch
     const response = await fetch(targetUrl, {
       method: req.method,
       headers: forwardedHeaders,
@@ -71,7 +74,7 @@ async function catchAll(
       headers: response.headers,
     });
 
-    // 5. Expose header phân trang cho Client
+    // 5. Expose pagination & trace headers
     const totalCount = response.headers.get('x-total-count');
     if (totalCount) {
       nextResponse.headers.set('x-total-count', totalCount);
@@ -82,7 +85,18 @@ async function catchAll(
   } catch (error) {
     console.error('[BFF Proxy Error]:', error);
     return NextResponse.json(
-      { success: false, error: 'Dịch vụ máy chủ tạm thời không phản hồi. Vui lòng thử lại sau.' },
+      {
+        success: false,
+        data: null,
+        error: {
+          code: 'BFF_UPSTREAM_UNAVAILABLE',
+          message: 'Dịch vụ máy chủ phía sau tạm thời không phản hồi. Hệ thống tự động kích hoạt chế độ dự phòng an toàn.',
+        },
+        meta: {
+          request_id: req.headers.get('x-trace-id') || `tr-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+        },
+      },
       { status: 502 }
     );
   }

@@ -1,0 +1,30 @@
+{
+  "app": {
+    "title": "RetailMind AI — MWG Enterprise Retail Intelligence",
+    "subtitle": "PostgreSQL SSOT Truth • Qdrant Vector RAG • Pessimistic ACID Locking",
+    "searchPlaceholder": "Search laptops by use case, hardware specs, or warranty policy..."
+  },
+  "nav": {
+    "advisor": "AI Shopping Advisor",
+    "catalog": "Laptop Catalog",
+    "compare": "Compare Specs",
+    "cart": "Shopping Cart",
+    "checkout": "SSOT Checkout",
+    "orders": "My Orders",
+    "warranty": "30-Day Warranty Portal",
+    "support": "Support Center",
+    "profile": "Profile & PII Privacy",
+    "login": "Sign In"
+  },
+  "commerce": {
+    "ssotPrice": "Listed Price (SSOT)",
+    "inStock": "Available in Stock",
+    "lowStock": "Low Stock",
+    "outOfStock": "Out of Stock",
+    "buyNow": "Buy Now",
+    "addToCart": "Add to Cart",
+    "compareNow": "Compare",
+    "warranty30Days": "Free 30-day replacement • 24-month official warranty"
+  }
+}
+

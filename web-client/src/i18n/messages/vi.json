@@ -1,0 +1,30 @@
+{
+  "app": {
+    "title": "RetailMind AI — Nền Tảng Trí Tuệ Bán Lẻ MWG",
+    "subtitle": "Chân Lý Dữ Liệu PostgreSQL SSOT • Vector RAG Qdrant • Khóa Bi Quan ACID",
+    "searchPlaceholder": "Tìm kiếm laptop theo nhu cầu, thông số kỹ thuật, chính sách bảo hành..."
+  },
+  "nav": {
+    "advisor": "Trợ lý AI Tư vấn",
+    "catalog": "Danh mục Laptop",
+    "compare": "So sánh cấu hình",
+    "cart": "Giỏ hàng",
+    "checkout": "Đặt hàng SSOT",
+    "orders": "Đơn hàng của tôi",
+    "warranty": "Cổng Bảo hành 30 ngày",
+    "support": "Trung tâm Hỗ trợ",
+    "profile": "Hồ sơ & Quyền riêng tư",
+    "login": "Đăng nhập"
+  },
+  "commerce": {
+    "ssotPrice": "Giá Niêm Yết (SSOT)",
+    "inStock": "Còn hàng khả dụng",
+    "lowStock": "Sắp hết hàng",
+    "outOfStock": "Tạm hết hàng",
+    "buyNow": "Đặt Mua Ngay",
+    "addToCart": "Thêm Vào Giỏ",
+    "compareNow": "So Sánh Máy",
+    "warranty30Days": "Đổi mới miễn phí 30 ngày • Bảo hành chính hãng 24 tháng"
+  }
+}
+
