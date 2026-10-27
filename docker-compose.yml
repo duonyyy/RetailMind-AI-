@@ -1,0 +1,145 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: retailmind_postgres
+    environment:
+      POSTGRES_DB: retailmind_db
+      POSTGRES_USER: retailmind_user
+      POSTGRES_PASSWORD: secure_password_change_me
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retailmind_user -d retailmind_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: retailmind_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: pgsty/silo:latest # Drop-in open-source MinIO replacement (minio/minio is discontinued on Docker Hub)
+    container_name: retailmind_minio
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Web Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: retailmind_qdrant
+    ports:
+      - "6333:6333" # REST API
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ': >/dev/tcp/localhost/6333' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.backend
+    container_name: retailmind_backend_nestjs
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=retailmind_user
+      - DB_PASSWORD=secure_password_change_me
+      - DB_DATABASE=retailmind_db
+      - ENABLE_POSTGRES=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=retailmind-documents
+      - AGENT_SERVICE_URL=http://agent:8000
+      - INTERNAL_TOOL_SECRET=secret_token_internal_retailmind
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  agent:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.agent
+    container_name: retailmind_agent_python
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - QDRANT_URL=http://qdrant:6333
+      - NESTJS_BACKEND_URL=http://backend:4000
+      - INTERNAL_TOOL_SECRET=secret_token_internal_retailmind
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-mock_key}
+      # - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006/v1/traces
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
+  # phoenix:
+  #   image: arizephoenix/phoenix:latest
+  #   container_name: retailmind_phoenix
+  #   ports:
+  #     - "6006:6006" # Arize Phoenix UI & OTLP Collector
+  #   environment:
+  #     - PHOENIX_PORT=6006
+  #     - PHOENIX_HOST=0.0.0.0
+  #   restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.frontend
+    container_name: retailmind_frontend_nextjs
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:4000
+      - NEXT_PUBLIC_AGENT_STREAM_URL=http://localhost:4000/api/v1/conversations
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redis_data:
+  minio_data:
+  qdrant_storage:
