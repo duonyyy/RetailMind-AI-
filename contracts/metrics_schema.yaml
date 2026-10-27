@@ -1,0 +1,31 @@
+# ==============================================================================
+# RETAILMIND AI — METRICS & TELEMETRY SCHEMA (Chuẩn OpenTelemetry & Prometheus)
+# ==============================================================================
+
+metrics:
+  llm_time_to_first_token_seconds:
+    type: histogram
+    description: "Thời gian phản hồi token đầu tiên (TTFT)"
+    buckets: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+    labels: [model, provider, route]
+
+  llm_time_per_output_token_seconds:
+    type: histogram
+    description: "Thời gian trung bình tạo mỗi token (TPOT)"
+    buckets: [0.01, 0.02, 0.05, 0.1, 0.2]
+    labels: [model]
+
+  llm_token_usage_total:
+    type: counter
+    description: "Tổng số token tiêu thụ"
+    labels: [model, type] # type: prompt, completion
+
+  agent_guardrail_rejections_total:
+    type: counter
+    description: "Số lần chặn bởi Grounding Verifier, AST Scanner, hoặc PII Masker"
+    labels: [guard_name, reason]
+
+  hitl_pending_reviews_current:
+    type: gauge
+    description: "Số lượng tác vụ nhạy cảm đang chờ chuyên viên duyệt"
+    labels: [priority]

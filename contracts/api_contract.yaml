@@ -1,0 +1,67 @@
+# ==============================================================================
+# RETAILMIND AI — API CONTRACT (Hợp đồng giao tiếp giữa Frontend, Agent & Backend)
+# ==============================================================================
+
+openapi: 3.1.0
+info:
+  title: RetailMind AI Unified API Contract
+  version: 1.0.0
+  description: Chuẩn giao tiếp SSE Stream, Internal Agent API và HITL Management
+
+paths:
+  /api/v1/agent/chat/stream:
+    post:
+      summary: SSE Chat Streaming giữa Frontend và AI Agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, message]
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                message:
+                  type: string
+                user_role:
+                  type: string
+                  enum: [Guest, Customer, Admin]
+                  default: Customer
+      responses:
+        '200':
+          description: Server-Sent Events stream (typed events)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  event: thought
+                  data: {"type": "thought", "content": "Đang phân tích ý định..."}
+                  
+                  event: answer
+                  data: {"type": "answer", "content": "Dạ hiện tại sản phẩm còn 5 cái..."}
+
+  /api/v1/internal/inventory/{sku}:
+    get:
+      summary: Python Agent gọi NestJS Backend để lấy tồn kho SSOT
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sku: { type: string }
+                  available_quantity: { type: integer }
+                  reserved_quantity: { type: integer }
+                  listed_price: { type: string, description: "Giá VNĐ định dạng Decimal String" }

@@ -1,0 +1,53 @@
+# ==============================================================================
+# RetailMind AI — Git Ignore Rules
+# ==============================================================================
+
+# Dependencies
+node_modules/
+**/node_modules/
+.venv/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Build Artifacts
+dist/
+**/dist/
+.next/
+**/.next/
+out/
+build/
+
+# Testing & Coverage
+.pytest_cache/
+coverage/
+.coverage
+htmlcov/
+*.log
+
+# Environment & Secrets (Never commit secrets)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+
+# Local runtime databases & stores
+*.sqlite
+*.sqlite3
+*.duckdb
+
+# Docker volumes mount dirs
+pgdata/
+redis_data/
+minio_data/
+qdrant_storage/
+
+# IDE & Operating System
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

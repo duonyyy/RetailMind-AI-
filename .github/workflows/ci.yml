@@ -1,0 +1,140 @@
+name: RetailMind AI Monorepo CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # ==============================================================================
+  # 1. SECURITY: Secret & Credential Leakage Audit
+  # ==============================================================================
+  security-audit:
+    name: 🛡️ Security Secret & Credential Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Audit Credentials in Git Diff
+        run: |
+          echo "Scanning for sensitive patterns (api_key, secret, password, private_key)..."
+          if git diff origin/main...HEAD | grep -iE "api[_-]?key\s*=\s*['\"][a-zA-Z0-9_\-]{20,}['\"]|BEGIN PRIVATE KEY|password\s*=\s*['\"][^'\"]+['\"]"; then
+            echo "::error::Phát hiện chuỗi khóa bí mật hoặc mật khẩu hardcode trong commit!"
+            exit 1
+          fi
+          echo "Bảo mật mã nguồn đạt chuẩn: Không phát hiện rò rỉ credential."
+
+  # ==============================================================================
+  # 2. BACKEND: NestJS Commerce Core (Node.js 20 & Jest)
+  # ==============================================================================
+  backend-nestjs:
+    name: 🏗️ NestJS Commerce Engine (Build & Tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Compile Production Build
+        run: npm run build
+
+      - name: Execute Jest Test Suite
+        run: npm test -- --coverage
+        env:
+          APP_ENV: test
+          DB_HOST: localhost
+          INTERNAL_TOOL_SECRET: test_ci_secret_token_123
+
+  # ==============================================================================
+  # 3. AI AGENT: Python LangGraph & Fast-API (Python 3.11 & Pytest)
+  # ==============================================================================
+  agent-python:
+    name: 🤖 Python LangGraph AI Agent (Lint, Pytest & SLA Coverage)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: apps/agent/requirements.txt
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff pytest pytest-asyncio pytest-cov httpx
+
+      - name: Static Code Analysis (Ruff Linter)
+        run: ruff check src/ tests/
+
+      - name: Execute Pytest Suite with Coverage Gating (>= 70%)
+        run: pytest tests/ -v --tb=short --cov=src --cov-fail-under=70
+        env:
+          APP_ENV: test
+          OPENAI_API_KEY: mock_key_for_testing
+          INTERNAL_TOOL_SECRET: test_ci_secret_token_123
+
+  # ==============================================================================
+  # 4. FRONTEND: Next.js 14 App Router & BFF Proxy
+  # ==============================================================================
+  frontend-nextjs:
+    name: 🌐 Next.js BFF Client (Typecheck & Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/frontend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Production Next.js Bundle
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+          NEXT_PUBLIC_AGENT_STREAM_URL: http://localhost:3001/api/v1/conversations
+
+  # ==============================================================================
+  # 5. DOCKER: Infrastructure Compose Validation
+  # ==============================================================================
+  docker-validation:
+    name: 🐳 Docker Compose Schema Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose Configuration
+        run: docker compose config
