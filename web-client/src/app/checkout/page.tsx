@@ -1,0 +1,356 @@
+'use client';
+
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { BrandSectionBackground } from '@/components/patterns';
+import { PreviewTokenCountdown } from '@/features/checkout/components/PreviewTokenCountdown';
+import { calculateExactOrderPreview } from '@/features/checkout/services/preview-token.get';
+import { confirmOrderAction } from '@/features/checkout/services/order.action';
+import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
+import {
+  Building2,
+  Truck,
+  CreditCard,
+  QrCode,
+  Banknote,
+  ShieldCheck,
+  Lock,
+  RefreshCw,
+} from 'lucide-react';
+
+export default function CheckoutPage() {
+  const router = useRouter();
+  const [selectedSku, setSelectedSku] = useState('LT-ASUS-VIVO15-OLED');
+  const [quantity, setQuantity] = useState(1);
+  const [deliveryMode, setDeliveryMode] = useState<'STORE_PICKUP' | 'HOME_DELIVERY'>('STORE_PICKUP');
+  const [selectedStoreId, setSelectedStoreId] = useState('store-hcm-q1');
+  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'QR_NAPAS247' | 'CARD'>('QR_NAPAS247');
+  const [discountCode, setDiscountCode] = useState('MWG_VIP500');
+  const [customerName, setCustomerName] = useState('Trần Khách Hàng');
+  const [customerPhone, setCustomerPhone] = useState('0908123883');
+  const [deliveryAddress, setDeliveryAddress] = useState('136 Nguyễn Thái Học, Quận 1, TP.HCM');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const selectedProduct =
+    BASELINE_LAPTOP_CATALOG.find((l) => l.sku === selectedSku) || BASELINE_LAPTOP_CATALOG[0];
+
+  const preview = calculateExactOrderPreview(
+    [
+      {
+        sku: selectedProduct.sku,
+        name: selectedProduct.name,
+        unitPriceVnd: selectedProduct.priceVnd,
+        quantity,
+        stockMax: selectedProduct.totalAvailableStock,
+      },
+    ],
+    discountCode
+  );
+
+  const handleConfirmOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
+    const idempotencyKey = `idem-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+    try {
+      const res = await fetch('/api/proxy/orders/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({
+          storeId: selectedStoreId,
+          items: [{ sku: selectedSku, quantity }],
+          discountCode,
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        const orderNo = json?.data?.orderNo || `MWG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-8812`;
+        router.push(
+          `/checkout/success?orderNo=${orderNo}&total=${encodeURIComponent(
+            preview.formattedGrandTotal
+          )}&store=${selectedStoreId}&idem=${idempotencyKey}`
+        );
+        return;
+      }
+    } catch {
+      // Fallback to server action
+    }
+
+    const result = await confirmOrderAction(
+      {
+        storeId: selectedStoreId,
+        items: [{ sku: selectedSku, quantity }],
+        discountCode,
+        deliveryMode,
+        paymentMethod,
+        customerName,
+        customerPhone,
+        deliveryAddress,
+      },
+      idempotencyKey
+    );
+
+    setIsSubmitting(false);
+    router.push(
+      `/checkout/success?orderNo=${result.data.orderNo}&total=${encodeURIComponent(
+        result.data.formattedTotal
+      )}&store=${selectedStoreId}&idem=${idempotencyKey}`
+    );
+  };
+
+  return (
+    <BrandSectionBackground
+      variant="soft-blue"
+      pattern="dot"
+      patternOpacity={0.05}
+      withGlow={true}
+      className="min-h-full p-6 sm:p-8 space-y-6"
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Lock className="w-5 h-5 text-blue-600" />
+            <span>Đặt Hàng Đa Bước &amp; Khóa Tồn Bi Quan (SCR-08 • UC03/UC06)</span>
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Thực thi khóa dòng bi quan <code className="font-mono">SELECT ... FOR UPDATE</code> và bảo vệ chống bấm đúp 100% qua <code className="font-mono">Idempotency-Key</code>.
+          </p>
+        </div>
+
+        <PreviewTokenCountdown initialSeconds={600} />
+      </div>
+
+      <form onSubmit={handleConfirmOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left 8 Cols: 3-Step Checkout */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* Step 1: Product & Delivery Mode */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">
+              Bước 1: Chọn Sản Phẩm &amp; Hình Thức Nhận Hàng
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+              <div className="sm:col-span-2">
+                <label className="font-semibold text-slate-700 block mb-1">Mẫu Laptop:</label>
+                <select
+                  value={selectedSku}
+                  onChange={(e) => setSelectedSku(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-semibold"
+                >
+                  {BASELINE_LAPTOP_CATALOG.map((l) => (
+                    <option key={l.sku} value={l.sku}>
+                      {l.name} — {l.formattedPrice}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Số lượng:</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={quantity}
+                  onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold tabular-nums"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-2">
+              <button
+                type="button"
+                onClick={() => setDeliveryMode('STORE_PICKUP')}
+                className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition ${
+                  deliveryMode === 'STORE_PICKUP'
+                    ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-500/20'
+                    : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <Building2 className="w-5 h-5 text-blue-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-slate-900">Nhận tại siêu thị MWG gần nhất</div>
+                  <div className="text-[11px] text-slate-500">Giữ máy sẵn sàng nhận trong 60 phút</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDeliveryMode('HOME_DELIVERY')}
+                className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition ${
+                  deliveryMode === 'HOME_DELIVERY'
+                    ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-500/20'
+                    : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <Truck className="w-5 h-5 text-blue-600 shrink-0" />
+                <div>
+                  <div className="font-bold text-slate-900">Giao hàng tận nơi miễn phí</div>
+                  <div className="text-[11px] text-slate-500">Giao hỏa tốc nội thành 2 giờ</div>
+                </div>
+              </button>
+            </div>
+
+            {deliveryMode === 'STORE_PICKUP' ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                {selectedProduct.branches.map((st) => (
+                  <button
+                    key={st.storeId}
+                    type="button"
+                    onClick={() => setSelectedStoreId(st.storeId)}
+                    className={`p-3 rounded-xl border text-left text-xs transition ${
+                      selectedStoreId === st.storeId
+                        ? 'border-blue-600 bg-blue-50/60'
+                        : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="font-bold text-slate-900">{st.name}</div>
+                    <div className="text-[11px] text-emerald-700 font-bold mt-1 tabular-nums">
+                      ✓ Khả dụng: {st.availableQty} máy
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-2">
+                <input
+                  type="text"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Họ và tên người nhận"
+                  required
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900"
+                />
+                <input
+                  type="tel"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  placeholder="Số điện thoại nhận hàng"
+                  required
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900"
+                />
+                <input
+                  type="text"
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  placeholder="Địa chỉ giao hàng chi tiết"
+                  required
+                  className="sm:col-span-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Step 2: Payment Method */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">
+              Bước 2: Phương Thức Thanh Toán Mô Phỏng
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('QR_NAPAS247')}
+                className={`p-3.5 rounded-xl border text-left space-y-1 transition ${
+                  paymentMethod === 'QR_NAPAS247'
+                    ? 'border-blue-600 bg-blue-50/70'
+                    : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <QrCode className="w-4 h-4 text-blue-600" />
+                <div className="font-bold text-slate-900">Chuyển khoản QR Napas247</div>
+                <div className="text-[11px] text-slate-500">Tự động đối soát mã đơn tức thì</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('COD')}
+                className={`p-3.5 rounded-xl border text-left space-y-1 transition ${
+                  paymentMethod === 'COD'
+                    ? 'border-blue-600 bg-blue-50/70'
+                    : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <Banknote className="w-4 h-4 text-emerald-600" />
+                <div className="font-bold text-slate-900">Thanh toán khi nhận máy (COD)</div>
+                <div className="text-[11px] text-slate-500">Kiểm tra máy nguyên seal trước khi trả</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('CARD')}
+                className={`p-3.5 rounded-xl border text-left space-y-1 transition ${
+                  paymentMethod === 'CARD'
+                    ? 'border-blue-600 bg-blue-50/70'
+                    : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <CreditCard className="w-4 h-4 text-blue-600" />
+                <div className="font-bold text-slate-900">Thẻ ATM / Visa / Mastercard</div>
+                <div className="text-[11px] text-slate-500">Miễn phí cà thẻ tại quầy siêu thị</div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right 4 Cols: Step 3 Final Confirmation */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">
+              Bước 3: Xác Nhận Cuối &amp; Khóa Tồn Kho
+            </h2>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span>Tạm tính ({quantity} máy):</span>
+                <span className="font-bold text-slate-900 tabular-nums">{preview.formattedSubtotal}</span>
+              </div>
+              <div className="flex justify-between text-emerald-700">
+                <span>Voucher ({discountCode}):</span>
+                <span className="font-bold tabular-nums">-{preview.formattedDiscount}</span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Thuế GTGT (VAT 10%):</span>
+                <span className="font-bold text-slate-900 tabular-nums">+{preview.formattedVat}</span>
+              </div>
+              <div className="pt-3 border-t border-slate-200 flex justify-between text-sm font-bold">
+                <span className="text-slate-900">Tổng thanh toán:</span>
+                <span className="text-blue-600 text-lg font-extrabold tabular-nums">
+                  {preview.formattedGrandTotal}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="ts-cta w-full py-3.5 text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isSubmitting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Đang khóa tồn kho bi quan...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>XÁC NHẬN CHỐT ĐƠN (1-CLICK)</span>
+                </>
+              )}
+            </button>
+
+            <p className="text-[11px] text-slate-400 text-center">
+              AI Agent tuyệt đối không tự ý chốt đơn. Chỉ thao tác bấm nút của Quý khách mới kích hoạt giao dịch.
+            </p>
+          </div>
+        </div>
+      </form>
+    </BrandSectionBackground>
+  );
+}
+

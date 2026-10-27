@@ -1,89 +1,76 @@
-"use client";
+'use client';
 
-import React, { useState } from "react";
-import Link from "next/link";
-import { BrandSectionBackground } from "@/components/patterns";
-import { formatVND } from "@/lib/utils";
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { BrandSectionBackground } from '@/components/patterns';
+import { formatVND } from '@/lib/utils';
+import { calculateExactOrderPreview } from '@/features/checkout/services/preview-token.get';
+import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
 import {
   ShoppingCart,
   Trash2,
   Plus,
   Minus,
   CreditCard,
-  Building2,
   CheckCircle2,
   ShieldCheck,
+  Tag,
   ArrowRight,
-} from "lucide-react";
+  Laptop,
+} from 'lucide-react';
 
 export default function CartPage() {
   const [items, setItems] = useState([
     {
-      sku: "LT-ASUS-VIVO15-OLED",
-      name: "Laptop Asus Vivobook 15 OLED A1505VA",
-      priceVnd: 17990000,
+      sku: 'LT-ASUS-VIVO15-OLED',
+      name: 'Laptop Asus Vivobook 15 OLED A1505VA',
+      unitPriceVnd: '17990000',
       quantity: 1,
       stockMax: 12,
     },
   ]);
-  const [selectedBranch, setSelectedBranch] = useState("store-hcm-q1");
-  const [discountCode, setDiscountCode] = useState("MWG_VIP500");
-  const [isOrdering, setIsOrdering] = useState(false);
-  const [orderResult, setOrderResult] = useState<any>(null);
+  const [discountCode, setDiscountCode] = useState('MWG_VIP500');
 
-  const subtotal = items.reduce((sum, it) => sum + it.priceVnd * it.quantity, 0);
-  const discount = discountCode.toUpperCase() === "MWG_VIP500" ? 500000 : 0;
-  const subtotalAfter = Math.max(0, subtotal - discount);
-  const vat = Math.floor(subtotalAfter * 0.1);
-  const grandTotal = subtotalAfter + vat;
+  const preview = calculateExactOrderPreview(items, discountCode);
 
-  const handleUpdateQty = (delta: number) => {
+  const handleUpdateQty = (sku: string, delta: number) => {
     setItems((prev) =>
-      prev.map((it) => ({
-        ...it,
-        quantity: Math.max(1, Math.min(it.stockMax, it.quantity + delta)),
-      }))
+      prev.map((it) =>
+        it.sku === sku
+          ? {
+              ...it,
+              quantity: Math.max(1, Math.min(it.stockMax, it.quantity + delta)),
+            }
+          : it
+      )
     );
   };
 
-  const handleCheckout = async () => {
-    setIsOrdering(true);
-    const idempotencyKey = `idem-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const handleRemoveItem = (sku: string) => {
+    setItems((prev) => prev.filter((it) => it.sku !== sku));
+  };
 
-    try {
-      const endpoint = "/api/proxy/orders/checkout";
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": idempotencyKey,
-        },
-        body: JSON.stringify({
-          storeId: selectedBranch,
-          items: items.map((it) => ({ sku: it.sku, quantity: it.quantity })),
-          discountCode,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setOrderResult(data.data);
-      } else {
-        throw new Error("Local fallback");
+  const handleAddSample = (sku: string) => {
+    const found = BASELINE_LAPTOP_CATALOG.find((l) => l.sku === sku);
+    if (!found) return;
+    setItems((prev) => {
+      const exists = prev.find((i) => i.sku === sku);
+      if (exists) {
+        return prev.map((i) =>
+          i.sku === sku ? { ...i, quantity: Math.min(i.stockMax, i.quantity + 1) } : i
+        );
       }
-    } catch {
-      const orderNo = `MWG-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(1000 + Math.random() * 9000)}`;
-      setOrderResult({
-        orderNo,
-        status: "placed",
-        totalVnd: grandTotal,
-        formattedTotal: formatVND(grandTotal),
-        idempotencyKey,
-        confirmedAt: new Date().toISOString(),
-      });
-    } finally {
-      setIsOrdering(false);
-    }
+      return [
+        ...prev,
+        {
+          sku: found.sku,
+          name: found.name,
+          unitPriceVnd: found.priceVnd,
+          quantity: 1,
+          stockMax: found.totalAvailableStock,
+        },
+      ];
+    });
   };
 
   return (
@@ -94,153 +81,189 @@ export default function CartPage() {
       withGlow={true}
       className="min-h-full p-6 sm:p-8 space-y-6"
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-blue-600" />
-            Giỏ Hàng &amp; Thanh Toán An Toàn (UC03)
+            <span>Giỏ Hàng &amp; Tính Toán Số Học Chính Xác (SCR-07 • UC03)</span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Áp dụng số học chính xác tuyệt đối (Decimal exactness) và Khóa bi quan chống bán vượt tồn kho.
+            100% phép tính tiền tệ thực thi trên kiểu nguyên lớn (BigInt / NUMERIC(18,0)), triệt tiêu hoàn toàn sai số dấu phẩy động.
           </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleAddSample('LT-LENOVO-TB14-G6')}
+            className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 inline-flex items-center gap-1.5 shadow-xs"
+          >
+            <Laptop className="w-3.5 h-3.5 text-blue-600" />
+            <span>+ Thêm ThinkBook 14 G6+</span>
+          </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Item List & Branch */}
+        {/* Left Column: Cart Items */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
             <h2 className="text-sm font-bold text-slate-900 mb-4">
-              Danh sách sản phẩm ({items.length})
+              Danh sách sản phẩm trong giỏ ({items.length})
             </h2>
 
-            <div className="divide-y divide-slate-100">
-              {items.map((it) => (
-                <div key={it.sku} className="py-4 flex items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">{it.name}</h3>
-                    <p className="text-xs text-slate-400 font-mono">SKU: {it.sku}</p>
-                    <span className="text-sm font-bold text-blue-600 tabular-nums block mt-1">
-                      {formatVND(it.priceVnd)}
-                    </span>
-                  </div>
+            {items.length === 0 ? (
+              <div className="py-10 text-center space-y-3">
+                <p className="text-xs text-slate-500">Giỏ hàng của quý khách đang trống.</p>
+                <Link href="/catalog" className="ts-cta text-xs py-2 px-4 inline-flex items-center gap-1.5">
+                  <span>Khám phá danh mục Laptop</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {items.map((it) => (
+                  <div key={it.sku} className="py-4 flex items-center justify-between gap-4">
+                    <div>
+                      <Link
+                        href={`/products/${it.sku}`}
+                        className="text-sm font-bold text-slate-900 hover:text-blue-600"
+                      >
+                        {it.name}
+                      </Link>
+                      <p className="text-xs text-slate-400 font-mono">
+                        SKU: {it.sku} • Tồn tối đa tại kho: {it.stockMax} máy
+                      </p>
+                      <span className="text-sm font-extrabold text-blue-600 tabular-nums block mt-1">
+                        {formatVND(it.unitPriceVnd)}
+                      </span>
+                    </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateQty(it.sku, -1)}
+                          className="p-1.5 hover:bg-slate-200 transition"
+                          aria-label="Giảm số lượng"
+                        >
+                          <Minus className="w-3.5 h-3.5 text-slate-600" />
+                        </button>
+                        <span className="px-3 text-xs font-bold text-slate-900 tabular-nums">
+                          {it.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateQty(it.sku, 1)}
+                          className="p-1.5 hover:bg-slate-200 transition"
+                          aria-label="Tăng số lượng"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-slate-600" />
+                        </button>
+                      </div>
+
                       <button
-                        onClick={() => handleUpdateQty(-1)}
-                        className="p-1.5 hover:bg-slate-200 transition"
-                        aria-label="Giảm"
+                        type="button"
+                        onClick={() => handleRemoveItem(it.sku)}
+                        className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                        aria-label="Xóa khỏi giỏ"
                       >
-                        <Minus className="w-3.5 h-3.5 text-slate-600" />
-                      </button>
-                      <span className="px-3 text-xs font-bold text-slate-900">{it.quantity}</span>
-                      <button
-                        onClick={() => handleUpdateQty(1)}
-                        className="p-1.5 hover:bg-slate-200 transition"
-                        aria-label="Tăng"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-slate-600" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Store Branch Selection */}
+          {/* Discount Voucher Input Box */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-3">
             <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-              <Building2 className="w-4 h-4 text-blue-600" />
-              <h3>Chọn Chi Nhánh Nhận Hàng</h3>
+              <Tag className="w-4 h-4 text-blue-600" />
+              <h3>Mã Ưu Đãi &amp; Khuyến Mãi SSOT (UC07)</h3>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {[
-                { id: "store-hcm-q1", name: "136 Nguyễn Thái Học, Q.1, TP.HCM", stock: 12 },
-                { id: "store-hn-cg", name: "117 Thái Hà, Đống Đa, Hà Nội", stock: 8 },
-                { id: "store-dn-hc", name: "320 đường 2/9, Hải Châu, Đà Nẵng", stock: 5 },
-              ].map((st) => (
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={discountCode}
+                onChange={(e) => setDiscountCode(e.target.value)}
+                placeholder="Nhập mã giảm giá (VD: MWG_VIP500 hoặc BACK2SCHOOL)"
+                className="flex-1 min-w-[220px] bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {['MWG_VIP500', 'BACK2SCHOOL'].map((code) => (
                 <button
-                  key={st.id}
-                  onClick={() => setSelectedBranch(st.id)}
-                  className={`p-3 rounded-xl border text-left text-xs transition ${
-                    selectedBranch === st.id
-                      ? "border-blue-500 bg-blue-50/70 ring-2 ring-blue-500/20"
-                      : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                  key={code}
+                  type="button"
+                  onClick={() => setDiscountCode(code)}
+                  className={`px-3 py-2 rounded-xl text-xs font-mono font-bold border transition ${
+                    discountCode.toUpperCase() === code
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                   }`}
                 >
-                  <div className="font-bold text-slate-900">{st.name}</div>
-                  <div className="text-[10px] text-emerald-600 font-bold mt-1">
-                    ✓ Còn {st.stock} máy khả dụng
-                  </div>
+                  {code}
                 </button>
               ))}
             </div>
+            {preview.discountCodeApplied && (
+              <div className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>
+                  Đã áp dụng mã {preview.discountCodeApplied}: Giảm trực tiếp {preview.formattedDiscount}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Right Column: Decimal Bill Breakdown & Checkout */}
+        {/* Right Column: Exact Decimal Breakdown */}
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
             <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">
-              Bảng Tính Tiền Chính Xác (SSOT)
+              Bảng Phân Tách Tiền Tệ Minh Bạch
             </h2>
 
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between text-slate-500">
-                <span>Tạm tính:</span>
-                <span className="font-semibold text-slate-800 tabular-nums">{formatVND(subtotal)}</span>
+            <div className="space-y-2.5 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span>Tạm tính ({items.reduce((a, b) => a + b.quantity, 0)} máy):</span>
+                <span className="font-semibold text-slate-900 tabular-nums">
+                  {preview.formattedSubtotal}
+                </span>
               </div>
               <div className="flex justify-between text-emerald-700">
-                <span>Khuyến mãi ({discountCode}):</span>
-                <span className="font-semibold tabular-nums">-{formatVND(discount)}</span>
+                <span>Chiết khấu ({preview.discountCodeApplied || 'Không'}):</span>
+                <span className="font-bold tabular-nums">-{preview.formattedDiscount}</span>
               </div>
-              <div className="flex justify-between text-slate-500">
+              <div className="flex justify-between text-slate-600">
                 <span>Thuế GTGT (VAT 10%):</span>
-                <span className="font-semibold text-slate-800 tabular-nums">+{formatVND(vat)}</span>
+                <span className="font-semibold text-slate-900 tabular-nums">
+                  +{preview.formattedVat}
+                </span>
               </div>
-              <div className="pt-2 border-t border-slate-200 flex justify-between text-sm font-bold">
-                <span className="text-slate-900">Tổng thanh toán:</span>
-                <span className="text-blue-600 text-base tabular-nums">{formatVND(grandTotal)}</span>
+              <div className="pt-3 border-t border-slate-200 flex justify-between text-sm font-bold">
+                <span className="text-slate-900">Tổng thanh toán cuối:</span>
+                <span className="text-blue-600 text-lg font-extrabold tabular-nums">
+                  {preview.formattedGrandTotal}
+                </span>
               </div>
             </div>
 
-            <button
-              onClick={handleCheckout}
-              disabled={isOrdering}
-              className="ts-cta w-full py-3 text-sm font-bold disabled:opacity-50"
+            <Link
+              href={`/checkout?sku=${items[0]?.sku || 'LT-ASUS-VIVO15-OLED'}&qty=${
+                items[0]?.quantity || 1
+              }&voucher=${discountCode}`}
+              className="ts-cta w-full py-3 text-xs font-bold flex items-center justify-center gap-2"
             >
               <CreditCard className="w-4 h-4" />
-              <span>{isOrdering ? "Đang xử lý khóa tồn..." : "Xác Nhận Đặt Hàng (1-Click)"}</span>
-            </button>
+              <span>Tiến Hành Đặt Hàng &amp; Khóa Tồn Kho</span>
+            </Link>
 
             <div className="flex items-center gap-2 text-[11px] text-slate-500 justify-center">
               <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-              <span>Chống gửi đúp bằng Idempotency-Key</span>
+              <span>Bảo vệ chống gửi đúp bởi Idempotency-Key</span>
             </div>
           </div>
-
-          {orderResult && (
-            <div className="ts-badge-success p-5 rounded-2xl space-y-2">
-              <div className="flex items-center gap-2 font-bold text-sm">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Đặt hàng thành công!</span>
-              </div>
-              <div className="text-xs space-y-1">
-                <div>Mã đơn: <span className="font-mono font-bold">{orderResult.orderNo}</span></div>
-                <div>Tổng tiền: <span className="font-bold">{orderResult.formattedTotal}</span></div>
-                <div className="text-[10px] text-slate-500">Idempotency Key: {orderResult.idempotencyKey}</div>
-              </div>
-              <Link
-                href="/orders"
-                className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 underline mt-2"
-              >
-                <span>Xem chi tiết lịch sử đơn hàng</span>
-                <ArrowRight className="w-3 h-3" />
-              </Link>
-            </div>
-          )}
         </div>
       </div>
     </BrandSectionBackground>
