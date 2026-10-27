@@ -1,5 +1,10 @@
-import { Injectable, BadRequestException, ConflictException, Optional } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  Optional,
+} from '@nestjs/common';
+import { DataSource, QueryRunner } from 'typeorm';
 import { Inventory } from '../entities/inventory.entity';
 
 export interface StoreDTO {
@@ -18,6 +23,11 @@ export interface StockDTO {
   reservedQty: number;
   availableQty: number;
   isAvailable: boolean;
+}
+
+export interface ReserveItemInput {
+  variantId: string;
+  quantity: number;
 }
 
 @Injectable()
@@ -95,9 +105,76 @@ export class InventoryService {
   }
 
   /**
-   * Khóa bi quan chống bán vượt tồn (Anti-Oversell Locking Engine):
-   * Thực thi trong CSDL Transaction với khóa SELECT ... FOR UPDATE (TypeORM setLock('pessimistic_write'))
+   * Khóa bi quan chống bán vượt tồn cho đơn hàng nhiều món (Anti-Oversell & Anti-Deadlock):
+   * Sắp xếp variantId tăng dần trước khi khóa SELECT ... FOR UPDATE để triệt tiêu bế tắc (Deadlock).
    */
+  async reserveMultipleWithLock(
+    queryRunner: QueryRunner,
+    storeId: string,
+    items: ReserveItemInput[],
+  ): Promise<void> {
+    if (!items || items.length === 0) return;
+
+    // QUY TẮC BẮT BUỘC (03-TRANSACTION_AND_CONCURRENCY.md): Sắp xếp tăng dần theo variantId
+    const sortedItems = [...items].sort((a, b) => a.variantId.localeCompare(b.variantId));
+
+    for (const item of sortedItems) {
+      const inventory = await queryRunner.manager
+        .createQueryBuilder(Inventory, 'inv')
+        .setLock('pessimistic_write')
+        .where('inv.store_id = :storeId AND inv.variant_id = :variantId', {
+          storeId,
+          variantId: item.variantId,
+        })
+        .getOne();
+
+      if (!inventory) {
+        throw new BadRequestException(
+          `Không tìm thấy dữ liệu tồn kho cho sản phẩm ${item.variantId} tại chi nhánh ${storeId}.`,
+        );
+      }
+
+      const availableQty = inventory.on_hand_qty - inventory.reserved_qty;
+      if (availableQty < item.quantity) {
+        throw new ConflictException(
+          `Sản phẩm ${item.variantId} chỉ còn khả dụng ${availableQty} chiếc, không đủ đáp ứng số lượng đặt mua (${item.quantity}).`,
+        );
+      }
+
+      inventory.reserved_qty += item.quantity;
+      await queryRunner.manager.save(inventory);
+    }
+  }
+
+  /**
+   * Hoàn lại số lượng tồn kho trong Transaction khi đơn hàng bị hủy
+   */
+  async restoreStockInTx(
+    queryRunner: QueryRunner,
+    storeId: string,
+    items: ReserveItemInput[],
+  ): Promise<void> {
+    if (!items || items.length === 0) return;
+
+    const sortedItems = [...items].sort((a, b) => a.variantId.localeCompare(b.variantId));
+
+    for (const item of sortedItems) {
+      const inventory = await queryRunner.manager
+        .createQueryBuilder(Inventory, 'inv')
+        .setLock('pessimistic_write')
+        .where('inv.store_id = :storeId AND inv.variant_id = :variantId', {
+          storeId,
+          variantId: item.variantId,
+        })
+        .getOne();
+
+      if (inventory) {
+        inventory.reserved_qty = Math.max(0, inventory.reserved_qty - item.quantity);
+        await queryRunner.manager.save(inventory);
+      }
+    }
+  }
+
   async reserveStock(storeId: string, variantId: string, quantity: number): Promise<void> {
     if (this.dataSource && this.dataSource.isInitialized) {
       const queryRunner = this.dataSource.createQueryRunner();
@@ -105,28 +182,7 @@ export class InventoryService {
       await queryRunner.startTransaction();
 
       try {
-        const inventory = await queryRunner.manager
-          .createQueryBuilder(Inventory, 'inv')
-          .setLock('pessimistic_write')
-          .where('inv.store_id = :storeId AND inv.variant_id = :variantId', {
-            storeId,
-            variantId,
-          })
-          .getOne();
-
-        if (!inventory) {
-          throw new BadRequestException('Không tìm thấy thông tin tồn kho cho biến thể này.');
-        }
-
-        const availableQty = inventory.on_hand_qty - inventory.reserved_qty;
-        if (availableQty < quantity) {
-          throw new ConflictException(
-            `Sản phẩm chỉ còn khả dụng ${availableQty} chiếc, không đủ đáp ứng yêu cầu (${quantity}).`,
-          );
-        }
-
-        inventory.reserved_qty += quantity;
-        await queryRunner.manager.save(inventory);
+        await this.reserveMultipleWithLock(queryRunner, storeId, [{ variantId, quantity }]);
         await queryRunner.commitTransaction();
         return;
       } catch (error) {

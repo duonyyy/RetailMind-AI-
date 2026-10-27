@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OrdersService } from './orders.service';
-import { CatalogService } from '../catalog/catalog.service';
-import { InventoryService } from '../inventory/services/inventory.service';
-import { ConflictException } from '@nestjs/common';
+import { CatalogService } from '../catalog/public-api';
+import { InventoryService } from '../inventory/public-api';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import Decimal from 'decimal.js';
 
 describe('OrdersService (SSOT Commerce & Decimal Precision)', () => {
@@ -35,6 +35,8 @@ describe('OrdersService (SSOT Commerce & Decimal Precision)', () => {
     expect(preview.totalVnd).toBe('19789000');
     expect(preview.items.length).toBe(1);
     expect(preview.items[0].name).toContain('Asus Vivobook');
+    expect(preview.previewToken).toBeDefined();
+    expect(preview.expiresAt).toBeDefined();
   });
 
   it('should apply discount code MWG_VIP500 correctly', async () => {
@@ -67,5 +69,53 @@ describe('OrdersService (SSOT Commerce & Decimal Precision)', () => {
     // Must return the exact same order instance without duplicate booking
     expect(order2.orderId).toBe(order1.orderId);
     expect(order2.orderNo).toBe(order1.orderNo);
+  });
+
+  it('should validate Signed Preview Token during checkout', async () => {
+    const items = [{ sku: 'LT-ASUS-VIVO15-OLED', quantity: 1 }];
+    const preview = await ordersService.calculatePreview(items, undefined, 'store-hcm-q1');
+
+    // Valid checkout with preview token
+    const order = await ordersService.checkout(
+      {
+        storeId: 'store-hcm-q1',
+        items,
+        previewToken: preview.previewToken,
+      },
+      'idem-token-valid-01',
+    );
+    expect(order.orderId).toBeDefined();
+
+    // Tampered token checkout should be rejected
+    const tamperedToken = `${preview.previewToken}tampered`;
+    await expect(
+      ordersService.checkout(
+        {
+          storeId: 'store-hcm-q1',
+          items,
+          previewToken: tamperedToken,
+        },
+        'idem-token-tamper-01',
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('should cancel confirmed order and prevent double cancellation', async () => {
+    const order = await ordersService.checkout(
+      {
+        storeId: 'store-hcm-q1',
+        items: [{ sku: 'LT-ASUS-VIVO15-OLED', quantity: 1 }],
+      },
+      'idem-cancel-test-01',
+    );
+
+    const cancelRes = await ordersService.cancelOrder(order.orderId, 'Khách đổi ý');
+    expect(cancelRes.success).toBe(true);
+    expect(cancelRes.status).toBe('CANCELLED');
+
+    // Double cancel should throw ConflictException
+    await expect(
+      ordersService.cancelOrder(order.orderId, 'Hủy lần 2'),
+    ).rejects.toThrow(ConflictException);
   });
 });
