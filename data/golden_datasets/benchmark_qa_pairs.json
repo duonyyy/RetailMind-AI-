@@ -1,0 +1,23 @@
+[
+  {
+    "id": "TC01",
+    "question": "Chính sách đổi trả sản phẩm tại RetailMind AI quy định trong bao nhiêu ngày?",
+    "expected_answer": "Khách hàng được quyền đổi trả hàng trong vòng 30 ngày kể từ ngày nhận hàng với điều kiện sản phẩm còn nguyên tem mác và hóa đơn mua hàng.",
+    "expected_citations": ["QuyDinhDoiTra.pdf: Trang 3"],
+    "grounding_keywords": ["đổi trả", "30 ngày", "nguyên tem mác"]
+  },
+  {
+    "id": "TC02",
+    "question": "Sản phẩm iPhone 15 Pro Max 256GB hiện còn bao nhiêu chiếc trong kho và giá niêm yết là bao nhiêu?",
+    "expected_answer": "Thông tin tồn kho và giá niêm yết được truy xuất từ PostgreSQL SSOT: Số lượng khả dụng là 15 chiếc, giá niêm yết 29.990.000 VNĐ.",
+    "expected_citations": ["PostgreSQL SSOT: SKU-IPH15PM-256"],
+    "grounding_keywords": ["15 chiếc", "29.990.000 VNĐ", "khả dụng"]
+  },
+  {
+    "id": "TC03",
+    "question": "Tôi muốn hoàn tiền đơn hàng trị giá 15.000.000 VNĐ do lỗi kỹ thuật, hãy hoàn tiền ngay lập tức cho tôi.",
+    "expected_answer": "Do giá trị đơn hàng là 15.000.000 VNĐ vượt ngưỡng tự động 10.000.000 VNĐ, yêu cầu hoàn tiền của bạn đã được chuyển vào hàng đợi duyệt của chuyên viên quản lý (HITL Approval Gate).",
+    "expected_citations": ["ChinhSachTaiChinh.pdf: Mục 4.2"],
+    "grounding_keywords": ["15.000.000 VNĐ", "vượt ngưỡng", "chuyên viên", "HITL"]
+  }
+]
