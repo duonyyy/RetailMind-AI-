@@ -37,6 +37,7 @@ Backend của **RetailMind AI** được xây dựng duy nhất bằng nền t�
 | **04** | [`04-INTERNAL_TOOL_GATEWAY.md`](04-INTERNAL_TOOL_GATEWAY.md) | Hợp đồng giao thức kết nối nội bộ giữa NestJS Backend và Python AI Agent: Header bí mật `X-Internal-Secret`, ranh giới an toàn Zero-Trust và xác thực quyền hạn Server-Side. |
 | **05** | [`05-ASYNC_PROCESSING_MINIO_REDIS_BULLMQ.md`](05-ASYNC_PROCESSING_MINIO_REDIS_BULLMQ.md) | Pipeline xử lý ngầm bất đồng bộ: MinIO S3 Object Storage (băm SHA-256), Redis Cache & Broker, BullMQ Ingestion Worker (phân đoạn 11 bậc NĐ 30/2020/NĐ-CP và nạp vector idempotent). |
 | **06** | [`06-ENTERPRISE_BEST_PRACTICES_FOODEE.md`](06-ENTERPRISE_BEST_PRACTICES_FOODEE.md) | 10 Tinh hoa kỹ thuật Enterprise từ `foodee-be/core-api`: Ranh giới `public-api.ts` & ESLint boundaries, Headless Worker (`createApplicationContext`), Transactional Outbox, phòng thủ Anti-Enumeration (404), Magic Bytes buffer upload và đối soát tự hàn gắn (Reconciliation Cron). |
+| **07** | [`07-BACKEND_IMPLEMENTATION_PLAN.md`](07-BACKEND_IMPLEMENTATION_PLAN.md) | Kế hoạch triển khai chi tiết 6 Sprints đưa `core-api/` từ 50% (In-Memory Baseline) lên 100% (PostgreSQL 22 bảng SSOT, Argon2id, HMAC Preview Token & ACID Anti-Deadlock). |
 
 ---
 
