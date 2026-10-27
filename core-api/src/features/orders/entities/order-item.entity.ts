@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
 } from 'typeorm';
 import Decimal from 'decimal.js';
-import { decimalTransformer } from '../../catalog/entities/variant.entity';
+import { decimalTransformer } from '../../catalog/public-api';
 
 @Entity('order_items')
 export class OrderItem {

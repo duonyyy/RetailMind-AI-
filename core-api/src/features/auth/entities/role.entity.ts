@@ -20,6 +20,9 @@ export class Role {
   @Column({ type: 'text', nullable: true })
   description: string;
 
+  @Column({ type: 'text', array: true, default: '{}' })
+  permissions: string[];
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

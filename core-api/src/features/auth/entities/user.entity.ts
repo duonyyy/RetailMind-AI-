@@ -30,7 +30,7 @@ export class User {
   @Column({ name: 'full_name', type: 'varchar', length: 255 })
   fullName: string;
 
-  @Column({ type: 'varchar', length: 20, nullable: true })
+  @Column({ name: 'phone_number', type: 'varchar', length: 50, nullable: true })
   phone: string;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
