@@ -1,0 +1,11 @@
+# Development Environment Overlay
+app:
+  env: "dev"
+  cors_origins: ["*"]
+
+persistence:
+  adapter: "memory"
+
+llm:
+  provider: "scripted"
+  model_name: "dev-scripted"

@@ -1,0 +1,14 @@
+# Test/CI Environment Overlay
+app:
+  env: "test"
+
+persistence:
+  adapter: "memory"
+
+llm:
+  provider: "scripted"
+  model_name: "test-scripted"
+
+harness:
+  max_steps: 4
+  max_critic_cycles: 1

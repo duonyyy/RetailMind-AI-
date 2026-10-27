@@ -1,0 +1,51 @@
+name: retail_store
+version: 1.0.0
+locale: vi-VN
+description: "Hệ thống Agent Trợ lý Bán lẻ Thông minh RetailMind AI — Tư vấn thiết bị công nghệ (Laptop MWG), tra cứu đơn hàng, giải đáp chính sách đổi trả & xử lý bồi hoàn"
+
+roles:
+  - guest
+  - customer
+  - admin
+
+prompts:
+  system: prompts/system.md
+  critic: prompts/critic.md
+  version: "2026-10-24.v1"
+
+knowledge:
+  sources:
+    - path: corpus/
+      loader: auto
+      chunker: markdown
+  retrieval:
+    top_k: 4
+    candidate_pool: 12
+    dense_weight: 0.7
+    sparse_weight: 0.3
+    reranker: none
+
+tools:
+  module: tools.py
+  enabled:
+    - lookup_laptop_catalog
+    - query_order_status
+    - request_return_or_refund
+    - search_knowledge
+
+policies: policies.yaml
+
+guards:
+  sanitizer: true
+  pii_packs:
+    - vn_decree13
+  injection_check: regex_and_heuristic
+
+limits:
+  max_steps: 8
+  max_critic_cycles: 2
+  grounding_threshold: 0.75
+  context_token_budget: 16000
+
+evals:
+  golden: evals/golden.jsonl

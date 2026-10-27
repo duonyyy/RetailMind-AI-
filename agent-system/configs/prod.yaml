@@ -1,0 +1,21 @@
+# Production Environment Overlay
+app:
+  env: "prod"
+  cors_origins: ["https://app.retailmind.internal"]
+
+persistence:
+  adapter: "postgres"
+  postgres_url: "postgresql://postgres:postgres@postgres:5432/retailmind_ai"
+  redis_url: "redis://redis:6379/0"
+
+llm:
+  provider: "openai_compat"
+  model_name: "gpt-4o-mini"
+
+feature_flags:
+  enable_pii_masking: true
+  enable_sanitizer: true
+  enable_injection_guard: true
+  enable_hitl: true
+  enable_rate_limiter: true
+  enable_cache: true

@@ -1,0 +1,26 @@
+rbac:
+  guest:
+    allowed_tools:
+      - search_knowledge
+      - lookup_laptop_catalog
+  customer:
+    allowed_tools:
+      - search_knowledge
+      - lookup_laptop_catalog
+      - query_order_status
+      - request_return_or_refund
+  admin:
+    allowed_tools: "*"
+
+approval_rules:
+  refund_threshold:
+    field: amount
+    tiers:
+      - max: "200000"
+        action: allow
+      - max: "2000000"
+        action: require_approval
+        approver_role: admin
+        timeout_hours: 24
+      - action: deny
+        reason: "Khoản bồi hoàn vượt quá hạn mức tối đa cho phép của cửa hàng (2.000.000 VNĐ). Yêu cầu chuyển hồ sơ sang Phòng Tài chính thẩm định."
