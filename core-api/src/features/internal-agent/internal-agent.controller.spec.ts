@@ -6,7 +6,7 @@ import { InventoryService } from '../inventory/public-api';
 import { OrdersService } from '../orders/public-api';
 import { ConfigService } from '@nestjs/config';
 import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
-import { ForbiddenException, ExecutionContext } from '@nestjs/common';
+import { ForbiddenException, ExecutionContext, ServiceUnavailableException } from '@nestjs/common';
 
 describe('InternalAgentGateway (Inter-Service Security & 13 Tools)', () => {
   let controller: InternalAgentController;
@@ -48,6 +48,7 @@ describe('InternalAgentGateway (Inter-Service Security & 13 Tools)', () => {
       const mockContext = {
         switchToHttp: () => ({
           getRequest: () => ({
+            path: '/internal/tools/catalog-search',
             headers: {
               'x-internal-secret': 'secret_token_internal_retailmind',
             },
@@ -62,6 +63,7 @@ describe('InternalAgentGateway (Inter-Service Security & 13 Tools)', () => {
       const mockContext = {
         switchToHttp: () => ({
           getRequest: () => ({
+            path: '/internal/tools/catalog-search',
             headers: {
               'x-internal-secret': 'wrong_secret',
             },
@@ -82,12 +84,8 @@ describe('InternalAgentGateway (Inter-Service Security & 13 Tools)', () => {
       expect(res.data.laptops[0].brand.toUpperCase()).toBe('ASUS');
     });
 
-    it('should check inventory for SKU', async () => {
-      const res = await controller.inventoryCheck({ sku: 'LT-ASUS-VIVO15-OLED' });
-      expect(res.status).toBe('success');
-      expect(res.tool).toBe('inventory_check');
-      expect(res.data.sku).toBe('LT-ASUS-VIVO15-OLED');
-      expect(res.data.is_in_stock).toBe(true);
+    it('does not present simulated inventory as authoritative', async () => {
+      await expect(controller.inventoryCheck({ sku: 'LT-ASUS-VIVO15-OLED' })).rejects.toThrow(ServiceUnavailableException);
     });
 
     it('should calculate commercial contract penalty capped at 8% (Dieu 301 LTM)', async () => {
@@ -102,41 +100,14 @@ describe('InternalAgentGateway (Inter-Service Security & 13 Tools)', () => {
       expect(res.data.penalty_amount_vnd).toBe('8000000');
     });
 
-    it('should view, add and remove items from customer cart with IDOR protection', async () => {
-      const customerId = 'cust-uuid-42';
-      // 1. Add item
-      const addRes = await controller.cartAdd(
-        { sku: 'LT-ASUS-VIVO15-OLED', quantity: 2 },
-        customerId,
-      );
-      expect(addRes.status).toBe('success');
-      expect(addRes.data.cart.total_items).toBe(2);
-
-      // 2. View cart
-      const viewRes = await controller.cartView(customerId);
-      expect(viewRes.data.customer_id).toBe(customerId);
-      expect(viewRes.data.items.length).toBe(1);
-
-      // 3. Remove item
-      const removeRes = await controller.cartRemove(
-        { sku: 'LT-ASUS-VIVO15-OLED' },
-        customerId,
-      );
-      expect(removeRes.data.cart.total_items).toBe(0);
-    });
-
-    it('should create support ticket for complaint or warranty', async () => {
-      const res = await controller.ticketCreate(
-        {
-          order_id: 'ORD-999001',
-          title: 'Khiếu nại đổi trả máy lỗi',
-          description: 'Máy bị sọc màn hình khi mới bóc hộp',
-        },
-        'cust-uuid-42',
-      );
-      expect(res.status).toBe('success');
-      expect(res.data.ticket_id).toBeDefined();
-      expect(res.data.ticket.status).toBe('OPEN');
+    it('fails closed for unverified cart, order and ticket operations', async () => {
+      await expect(controller.cartView('customer')).rejects.toThrow(ServiceUnavailableException);
+      await expect(controller.cartAdd({ sku: 'ABC', quantity: 1 }, 'customer')).rejects.toThrow(ServiceUnavailableException);
+      await expect(controller.cartRemove({ sku: 'ABC' }, 'customer')).rejects.toThrow(ServiceUnavailableException);
+      await expect(controller.orderPreview({ sku: 'ABC' })).rejects.toThrow(ServiceUnavailableException);
+      await expect(controller.orderStatus({ order_id: 'ORD-100201' })).rejects.toThrow(ServiceUnavailableException);
+      await expect(controller.orderCancel({ order_id: 'ORD-100201', reason: 'test' })).rejects.toThrow(ServiceUnavailableException);
+      await expect(controller.ticketCreate({ title: 'title', description: 'description' }, 'customer')).rejects.toThrow(ServiceUnavailableException);
     });
   });
 });

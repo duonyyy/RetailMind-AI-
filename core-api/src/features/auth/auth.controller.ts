@@ -39,11 +39,11 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      path: '/api/v1/auth/refresh',
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    return result;
+    return { user: result.user };
   }
 
   @Public()
@@ -51,10 +51,9 @@ export class AuthController {
   async login(
     @Body('email') email: string,
     @Body('password') password?: string,
-    @Body('role') role?: UserRole,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const result = await this.authService.login(email, password, role);
+    const result = await this.authService.login(email, password);
 
     if (res && res.cookie) {
       res.cookie('access_token', result.tokens.accessToken, {
@@ -67,12 +66,12 @@ export class AuthController {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        path: '/api/v1/auth/refresh',
+        path: '/',
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
     }
 
-    return result;
+    return { user: result.user };
   }
 
   @Public()
@@ -82,7 +81,7 @@ export class AuthController {
     @Body('refreshToken') bodyToken?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const token = bodyToken || req.cookies?.refresh_token;
+    const token = bodyToken || this.refreshCookie(req);
     const newTokens = await this.authService.refreshToken(token);
 
     if (res && res.cookie) {
@@ -96,18 +95,19 @@ export class AuthController {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        path: '/api/v1/auth/refresh',
+        path: '/',
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
     }
 
-    return newTokens;
+    return { success: true };
   }
 
   @Post('logout')
-  async logout(@Res({ passthrough: true }) res: Response) {
+  async logout(@Req() req: Request, @Body('refreshToken') bodyToken: string, @Res({ passthrough: true }) res: Response) {
+    await this.authService.revokeRefreshToken(bodyToken || this.refreshCookie(req));
     res.clearCookie('access_token');
-    res.clearCookie('refresh_token', { path: '/api/v1/auth/refresh' });
+    res.clearCookie('refresh_token', { path: '/' });
     return { success: true, message: 'Đăng xuất thành công.' };
   }
 
@@ -116,7 +116,13 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Headers('authorization') authHeader?: string,
   ) {
-    const userId = user?.id || '00000000-0000-0000-0000-000000000002';
+    const userId = user.id;
     return this.authService.getProfile(userId);
   }
+  private refreshCookie(req: Request): string | undefined {
+    const entry = (req.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith('refresh_token='));
+    if (!entry) return undefined;
+    try { return decodeURIComponent(entry.slice('refresh_token='.length)); } catch { return undefined; }
+  }
+
 }

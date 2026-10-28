@@ -13,7 +13,7 @@ const isDbEnabled = process.env.ENABLE_POSTGRES === 'true';
   imports: [
     ...(isDbEnabled ? [TypeOrmModule.forFeature([User, Role])] : []),
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'retailmind_jwt_secret_production_2026',
+      secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '7d' },
     }),
   ],

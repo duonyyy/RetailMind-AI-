@@ -1,0 +1,45 @@
+35256187f174bda25bf2dbe3ee478c44
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Inventory = void 0;
+const typeorm_1 = require("typeorm");
+let Inventory = class Inventory {
+};
+exports.Inventory = Inventory;
+__decorate([
+    (0, typeorm_1.PrimaryColumn)({ type: 'uuid' }),
+    __metadata("design:type", String)
+], Inventory.prototype, "store_id", void 0);
+__decorate([
+    (0, typeorm_1.PrimaryColumn)({ type: 'uuid' }),
+    __metadata("design:type", String)
+], Inventory.prototype, "variant_id", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'int', default: 0 }),
+    __metadata("design:type", Number)
+], Inventory.prototype, "on_hand_qty", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'int', default: 0 }),
+    __metadata("design:type", Number)
+], Inventory.prototype, "reserved_qty", void 0);
+__decorate([
+    (0, typeorm_1.CreateDateColumn)({ type: 'timestamptz' }),
+    __metadata("design:type", Date)
+], Inventory.prototype, "created_at", void 0);
+__decorate([
+    (0, typeorm_1.UpdateDateColumn)({ type: 'timestamptz' }),
+    __metadata("design:type", Date)
+], Inventory.prototype, "updated_at", void 0);
+exports.Inventory = Inventory = __decorate([
+    (0, typeorm_1.Entity)('inventory')
+], Inventory);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcaW52ZW50b3J5XFxlbnRpdGllc1xcaW52ZW50b3J5LmVudGl0eS50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7QUFBQSxxQ0FBNEY7QUFHckYsSUFBTSxTQUFTLEdBQWYsTUFBTSxTQUFTO0NBa0JyQixDQUFBO0FBbEJZLDhCQUFTO0FBRXBCO0lBREMsSUFBQSx1QkFBYSxFQUFDLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxDQUFDOzsyQ0FDZjtBQUdqQjtJQURDLElBQUEsdUJBQWEsRUFBQyxFQUFFLElBQUksRUFBRSxNQUFNLEVBQUUsQ0FBQzs7NkNBQ2I7QUFHbkI7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsS0FBSyxFQUFFLE9BQU8sRUFBRSxDQUFDLEVBQUUsQ0FBQzs7OENBQ2hCO0FBR3BCO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLEtBQUssRUFBRSxPQUFPLEVBQUUsQ0FBQyxFQUFFLENBQUM7OytDQUNmO0FBR3JCO0lBREMsSUFBQSwwQkFBZ0IsRUFBQyxFQUFFLElBQUksRUFBRSxhQUFhLEVBQUUsQ0FBQzs4QkFDOUIsSUFBSTs2Q0FBQztBQUdqQjtJQURDLElBQUEsMEJBQWdCLEVBQUMsRUFBRSxJQUFJLEVBQUUsYUFBYSxFQUFFLENBQUM7OEJBQzlCLElBQUk7NkNBQUM7b0JBakJOLFNBQVM7SUFEckIsSUFBQSxnQkFBTSxFQUFDLFdBQVcsQ0FBQztHQUNQLFNBQVMsQ0FrQnJCIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIkM6XFxVc2Vyc1xcQWRtaW5cXERlc2t0b3BcXEV4Y2VsTUNQXFxNV0dfQUlfRW5naW5lZXJfSW50ZXJ2aWV3X1N0dWR5X0tpdFxcUmV0YWlsTWluZF9BSVxcY29yZS1hcGlcXHNyY1xcZmVhdHVyZXNcXGludmVudG9yeVxcZW50aXRpZXNcXGludmVudG9yeS5lbnRpdHkudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHsgRW50aXR5LCBDb2x1bW4sIFByaW1hcnlDb2x1bW4sIENyZWF0ZURhdGVDb2x1bW4sIFVwZGF0ZURhdGVDb2x1bW4gfSBmcm9tICd0eXBlb3JtJztcblxuQEVudGl0eSgnaW52ZW50b3J5JylcbmV4cG9ydCBjbGFzcyBJbnZlbnRvcnkge1xuICBAUHJpbWFyeUNvbHVtbih7IHR5cGU6ICd1dWlkJyB9KVxuICBzdG9yZV9pZDogc3RyaW5nO1xuXG4gIEBQcmltYXJ5Q29sdW1uKHsgdHlwZTogJ3V1aWQnIH0pXG4gIHZhcmlhbnRfaWQ6IHN0cmluZztcblxuICBAQ29sdW1uKHsgdHlwZTogJ2ludCcsIGRlZmF1bHQ6IDAgfSlcbiAgb25faGFuZF9xdHk6IG51bWJlcjtcblxuICBAQ29sdW1uKHsgdHlwZTogJ2ludCcsIGRlZmF1bHQ6IDAgfSlcbiAgcmVzZXJ2ZWRfcXR5OiBudW1iZXI7XG5cbiAgQENyZWF0ZURhdGVDb2x1bW4oeyB0eXBlOiAndGltZXN0YW1wdHonIH0pXG4gIGNyZWF0ZWRfYXQ6IERhdGU7XG5cbiAgQFVwZGF0ZURhdGVDb2x1bW4oeyB0eXBlOiAndGltZXN0YW1wdHonIH0pXG4gIHVwZGF0ZWRfYXQ6IERhdGU7XG59XG4iXSwidmVyc2lvbiI6M30=

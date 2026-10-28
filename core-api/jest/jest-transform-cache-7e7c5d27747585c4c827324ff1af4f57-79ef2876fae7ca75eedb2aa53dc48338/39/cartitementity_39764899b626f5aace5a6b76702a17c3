@@ -1,0 +1,57 @@
+5816c86e4865bbb051259f70db49d507
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CartItem = void 0;
+const typeorm_1 = require("typeorm");
+const cart_entity_1 = require("./cart.entity");
+const public_api_1 = require("../../catalog/public-api");
+let CartItem = class CartItem {
+};
+exports.CartItem = CartItem;
+__decorate([
+    (0, typeorm_1.PrimaryGeneratedColumn)('uuid'),
+    __metadata("design:type", String)
+], CartItem.prototype, "id", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'cart_id', type: 'uuid' }),
+    __metadata("design:type", String)
+], CartItem.prototype, "cartId", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => cart_entity_1.Cart, (cart) => cart.items, { onDelete: 'CASCADE' }),
+    (0, typeorm_1.JoinColumn)({ name: 'cart_id' }),
+    __metadata("design:type", cart_entity_1.Cart)
+], CartItem.prototype, "cart", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'variant_id', type: 'uuid' }),
+    __metadata("design:type", String)
+], CartItem.prototype, "variantId", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => public_api_1.Variant, { onDelete: 'RESTRICT' }),
+    (0, typeorm_1.JoinColumn)({ name: 'variant_id' }),
+    __metadata("design:type", public_api_1.Variant)
+], CartItem.prototype, "variant", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'int', default: 1 }),
+    __metadata("design:type", Number)
+], CartItem.prototype, "quantity", void 0);
+__decorate([
+    (0, typeorm_1.CreateDateColumn)({ name: 'created_at' }),
+    __metadata("design:type", Date)
+], CartItem.prototype, "createdAt", void 0);
+__decorate([
+    (0, typeorm_1.UpdateDateColumn)({ name: 'updated_at' }),
+    __metadata("design:type", Date)
+], CartItem.prototype, "updatedAt", void 0);
+exports.CartItem = CartItem = __decorate([
+    (0, typeorm_1.Entity)('cart_items')
+], CartItem);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcb3JkZXJzXFxlbnRpdGllc1xcY2FydC1pdGVtLmVudGl0eS50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7QUFBQSxxQ0FRaUI7QUFDakIsK0NBQXFDO0FBQ3JDLHlEQUFtRDtBQUc1QyxJQUFNLFFBQVEsR0FBZCxNQUFNLFFBQVE7Q0EwQnBCLENBQUE7QUExQlksNEJBQVE7QUFFbkI7SUFEQyxJQUFBLGdDQUFzQixFQUFDLE1BQU0sQ0FBQzs7b0NBQ3BCO0FBR1g7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsU0FBUyxFQUFFLElBQUksRUFBRSxNQUFNLEVBQUUsQ0FBQzs7d0NBQzNCO0FBSWY7SUFGQyxJQUFBLG1CQUFTLEVBQUMsR0FBRyxFQUFFLENBQUMsa0JBQUksRUFBRSxDQUFDLElBQUksRUFBRSxFQUFFLENBQUMsSUFBSSxDQUFDLEtBQUssRUFBRSxFQUFFLFFBQVEsRUFBRSxTQUFTLEVBQUUsQ0FBQztJQUNwRSxJQUFBLG9CQUFVLEVBQUMsRUFBRSxJQUFJLEVBQUUsU0FBUyxFQUFFLENBQUM7OEJBQzFCLGtCQUFJO3NDQUFDO0FBR1g7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsWUFBWSxFQUFFLElBQUksRUFBRSxNQUFNLEVBQUUsQ0FBQzs7MkNBQzNCO0FBSWxCO0lBRkMsSUFBQSxtQkFBUyxFQUFDLEdBQUcsRUFBRSxDQUFDLG9CQUFPLEVBQUUsRUFBRSxRQUFRLEVBQUUsVUFBVSxFQUFFLENBQUM7SUFDbEQsSUFBQSxvQkFBVSxFQUFDLEVBQUUsSUFBSSxFQUFFLFlBQVksRUFBRSxDQUFDOzhCQUMxQixvQkFBTzt5Q0FBQztBQUdqQjtJQURDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxLQUFLLEVBQUUsT0FBTyxFQUFFLENBQUMsRUFBRSxDQUFDOzswQ0FDbkI7QUFHakI7SUFEQyxJQUFBLDBCQUFnQixFQUFDLEVBQUUsSUFBSSxFQUFFLFlBQVksRUFBRSxDQUFDOzhCQUM5QixJQUFJOzJDQUFDO0FBR2hCO0lBREMsSUFBQSwwQkFBZ0IsRUFBQyxFQUFFLElBQUksRUFBRSxZQUFZLEVBQUUsQ0FBQzs4QkFDOUIsSUFBSTsyQ0FBQzttQkF6QkwsUUFBUTtJQURwQixJQUFBLGdCQUFNLEVBQUMsWUFBWSxDQUFDO0dBQ1IsUUFBUSxDQTBCcEIiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcb3JkZXJzXFxlbnRpdGllc1xcY2FydC1pdGVtLmVudGl0eS50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQge1xuICBFbnRpdHksXG4gIFByaW1hcnlHZW5lcmF0ZWRDb2x1bW4sXG4gIENvbHVtbixcbiAgTWFueVRvT25lLFxuICBKb2luQ29sdW1uLFxuICBDcmVhdGVEYXRlQ29sdW1uLFxuICBVcGRhdGVEYXRlQ29sdW1uLFxufSBmcm9tICd0eXBlb3JtJztcbmltcG9ydCB7IENhcnQgfSBmcm9tICcuL2NhcnQuZW50aXR5JztcbmltcG9ydCB7IFZhcmlhbnQgfSBmcm9tICcuLi8uLi9jYXRhbG9nL3B1YmxpYy1hcGknO1xuXG5ARW50aXR5KCdjYXJ0X2l0ZW1zJylcbmV4cG9ydCBjbGFzcyBDYXJ0SXRlbSB7XG4gIEBQcmltYXJ5R2VuZXJhdGVkQ29sdW1uKCd1dWlkJylcbiAgaWQ6IHN0cmluZztcblxuICBAQ29sdW1uKHsgbmFtZTogJ2NhcnRfaWQnLCB0eXBlOiAndXVpZCcgfSlcbiAgY2FydElkOiBzdHJpbmc7XG5cbiAgQE1hbnlUb09uZSgoKSA9PiBDYXJ0LCAoY2FydCkgPT4gY2FydC5pdGVtcywgeyBvbkRlbGV0ZTogJ0NBU0NBREUnIH0pXG4gIEBKb2luQ29sdW1uKHsgbmFtZTogJ2NhcnRfaWQnIH0pXG4gIGNhcnQ6IENhcnQ7XG5cbiAgQENvbHVtbih7IG5hbWU6ICd2YXJpYW50X2lkJywgdHlwZTogJ3V1aWQnIH0pXG4gIHZhcmlhbnRJZDogc3RyaW5nO1xuXG4gIEBNYW55VG9PbmUoKCkgPT4gVmFyaWFudCwgeyBvbkRlbGV0ZTogJ1JFU1RSSUNUJyB9KVxuICBASm9pbkNvbHVtbih7IG5hbWU6ICd2YXJpYW50X2lkJyB9KVxuICB2YXJpYW50OiBWYXJpYW50O1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAnaW50JywgZGVmYXVsdDogMSB9KVxuICBxdWFudGl0eTogbnVtYmVyO1xuXG4gIEBDcmVhdGVEYXRlQ29sdW1uKHsgbmFtZTogJ2NyZWF0ZWRfYXQnIH0pXG4gIGNyZWF0ZWRBdDogRGF0ZTtcblxuICBAVXBkYXRlRGF0ZUNvbHVtbih7IG5hbWU6ICd1cGRhdGVkX2F0JyB9KVxuICB1cGRhdGVkQXQ6IERhdGU7XG59XG4iXSwidmVyc2lvbiI6M30=

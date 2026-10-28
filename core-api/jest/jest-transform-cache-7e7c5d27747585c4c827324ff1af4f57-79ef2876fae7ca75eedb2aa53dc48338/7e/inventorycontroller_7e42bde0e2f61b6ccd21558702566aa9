@@ -1,0 +1,79 @@
+74dac11d31b3d02390c9e8ef6b441e94
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.InventoryController = void 0;
+const roles_decorator_1 = require("../../shared/decorators/roles.decorator");
+const public_decorator_1 = require("../../shared/decorators/public.decorator");
+const common_1 = require("@nestjs/common");
+const inventory_service_1 = require("./services/inventory.service");
+let InventoryController = class InventoryController {
+    constructor(inventoryService) {
+        this.inventoryService = inventoryService;
+    }
+    async getStores() {
+        const stores = await this.inventoryService.getStores();
+        return {
+            status: 'success',
+            total: stores.length,
+            data: stores,
+        };
+    }
+    async getStock(storeId, variantId) {
+        const stock = await this.inventoryService.getStock(storeId, variantId);
+        return {
+            status: 'success',
+            data: stock,
+        };
+    }
+    async reserveStock(storeId, variantId, quantity) {
+        await this.inventoryService.reserveStock(storeId, variantId, quantity || 1);
+        return {
+            status: 'success',
+            message: `Đã giữ chỗ thành công ${quantity || 1} sản phẩm tại kho.`,
+        };
+    }
+};
+exports.InventoryController = InventoryController;
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, common_1.Get)('stores'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], InventoryController.prototype, "getStores", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, common_1.Get)('stock'),
+    __param(0, (0, common_1.Query)('storeId')),
+    __param(1, (0, common_1.Query)('variantId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], InventoryController.prototype, "getStock", null);
+__decorate([
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, common_1.Post)('reserve'),
+    __param(0, (0, common_1.Body)('storeId')),
+    __param(1, (0, common_1.Body)('variantId')),
+    __param(2, (0, common_1.Body)('quantity')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, Number]),
+    __metadata("design:returntype", Promise)
+], InventoryController.prototype, "reserveStock", null);
+exports.InventoryController = InventoryController = __decorate([
+    (0, common_1.Controller)('inventory'),
+    __metadata("design:paramtypes", [inventory_service_1.InventoryService])
+], InventoryController);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcaW52ZW50b3J5XFxpbnZlbnRvcnkuY29udHJvbGxlci50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7Ozs7QUFBQSw2RUFBZ0U7QUFDaEUsK0VBQWtFO0FBQ2xFLDJDQUFvRTtBQUNwRSxvRUFBZ0U7QUFHekQsSUFBTSxtQkFBbUIsR0FBekIsTUFBTSxtQkFBbUI7SUFDOUIsWUFBNkIsZ0JBQWtDO1FBQWxDLHFCQUFnQixHQUFoQixnQkFBZ0IsQ0FBa0I7SUFBRyxDQUFDO0lBSTdELEFBQU4sS0FBSyxDQUFDLFNBQVM7UUFDYixNQUFNLE1BQU0sR0FBRyxNQUFNLElBQUksQ0FBQyxnQkFBZ0IsQ0FBQyxTQUFTLEVBQUUsQ0FBQztRQUN2RCxPQUFPO1lBQ0wsTUFBTSxFQUFFLFNBQVM7WUFDakIsS0FBSyxFQUFFLE1BQU0sQ0FBQyxNQUFNO1lBQ3BCLElBQUksRUFBRSxNQUFNO1NBQ2IsQ0FBQztJQUNKLENBQUM7SUFJSyxBQUFOLEtBQUssQ0FBQyxRQUFRLENBQ00sT0FBZSxFQUNiLFNBQWlCO1FBRXJDLE1BQU0sS0FBSyxHQUFHLE1BQU0sSUFBSSxDQUFDLGdCQUFnQixDQUFDLFFBQVEsQ0FBQyxPQUFPLEVBQUUsU0FBUyxDQUFDLENBQUM7UUFDdkUsT0FBTztZQUNMLE1BQU0sRUFBRSxTQUFTO1lBQ2pCLElBQUksRUFBRSxLQUFLO1NBQ1osQ0FBQztJQUNKLENBQUM7SUFJSyxBQUFOLEtBQUssQ0FBQyxZQUFZLENBQ0MsT0FBZSxFQUNiLFNBQWlCLEVBQ2xCLFFBQWdCO1FBRWxDLE1BQU0sSUFBSSxDQUFDLGdCQUFnQixDQUFDLFlBQVksQ0FBQyxPQUFPLEVBQUUsU0FBUyxFQUFFLFFBQVEsSUFBSSxDQUFDLENBQUMsQ0FBQztRQUM1RSxPQUFPO1lBQ0wsTUFBTSxFQUFFLFNBQVM7WUFDakIsT0FBTyxFQUFFLHlCQUF5QixRQUFRLElBQUksQ0FBQyxvQkFBb0I7U0FDcEUsQ0FBQztJQUNKLENBQUM7Q0FDRixDQUFBO0FBeENZLGtEQUFtQjtBQUt4QjtJQUZMLElBQUEseUJBQU0sR0FBRTtJQUNSLElBQUEsWUFBRyxFQUFDLFFBQVEsQ0FBQzs7OztvREFRYjtBQUlLO0lBRkwsSUFBQSx5QkFBTSxHQUFFO0lBQ1IsSUFBQSxZQUFHLEVBQUMsT0FBTyxDQUFDO0lBRVYsV0FBQSxJQUFBLGNBQUssRUFBQyxTQUFTLENBQUMsQ0FBQTtJQUNoQixXQUFBLElBQUEsY0FBSyxFQUFDLFdBQVcsQ0FBQyxDQUFBOzs7O21EQU9wQjtBQUlLO0lBRkwsSUFBQSx1QkFBSyxFQUFDLE9BQU8sQ0FBQztJQUNkLElBQUEsYUFBSSxFQUFDLFNBQVMsQ0FBQztJQUViLFdBQUEsSUFBQSxhQUFJLEVBQUMsU0FBUyxDQUFDLENBQUE7SUFDZixXQUFBLElBQUEsYUFBSSxFQUFDLFdBQVcsQ0FBQyxDQUFBO0lBQ2pCLFdBQUEsSUFBQSxhQUFJLEVBQUMsVUFBVSxDQUFDLENBQUE7Ozs7dURBT2xCOzhCQXZDVSxtQkFBbUI7SUFEL0IsSUFBQSxtQkFBVSxFQUFDLFdBQVcsQ0FBQztxQ0FFeUIsb0NBQWdCO0dBRHBELG1CQUFtQixDQXdDL0IiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcaW52ZW50b3J5XFxpbnZlbnRvcnkuY29udHJvbGxlci50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyBSb2xlcyB9IGZyb20gJy4uLy4uL3NoYXJlZC9kZWNvcmF0b3JzL3JvbGVzLmRlY29yYXRvcic7XHJcbmltcG9ydCB7IFB1YmxpYyB9IGZyb20gJy4uLy4uL3NoYXJlZC9kZWNvcmF0b3JzL3B1YmxpYy5kZWNvcmF0b3InO1xyXG5pbXBvcnQgeyBDb250cm9sbGVyLCBHZXQsIFBvc3QsIFF1ZXJ5LCBCb2R5IH0gZnJvbSAnQG5lc3Rqcy9jb21tb24nO1xyXG5pbXBvcnQgeyBJbnZlbnRvcnlTZXJ2aWNlIH0gZnJvbSAnLi9zZXJ2aWNlcy9pbnZlbnRvcnkuc2VydmljZSc7XHJcblxyXG5AQ29udHJvbGxlcignaW52ZW50b3J5JylcclxuZXhwb3J0IGNsYXNzIEludmVudG9yeUNvbnRyb2xsZXIge1xyXG4gIGNvbnN0cnVjdG9yKHByaXZhdGUgcmVhZG9ubHkgaW52ZW50b3J5U2VydmljZTogSW52ZW50b3J5U2VydmljZSkge31cclxuXHJcbiAgQFB1YmxpYygpXHJcbiAgQEdldCgnc3RvcmVzJylcclxuICBhc3luYyBnZXRTdG9yZXMoKSB7XHJcbiAgICBjb25zdCBzdG9yZXMgPSBhd2FpdCB0aGlzLmludmVudG9yeVNlcnZpY2UuZ2V0U3RvcmVzKCk7XHJcbiAgICByZXR1cm4ge1xyXG4gICAgICBzdGF0dXM6ICdzdWNjZXNzJyxcclxuICAgICAgdG90YWw6IHN0b3Jlcy5sZW5ndGgsXHJcbiAgICAgIGRhdGE6IHN0b3JlcyxcclxuICAgIH07XHJcbiAgfVxyXG5cclxuICBAUHVibGljKClcclxuICBAR2V0KCdzdG9jaycpXHJcbiAgYXN5bmMgZ2V0U3RvY2soXHJcbiAgICBAUXVlcnkoJ3N0b3JlSWQnKSBzdG9yZUlkOiBzdHJpbmcsXHJcbiAgICBAUXVlcnkoJ3ZhcmlhbnRJZCcpIHZhcmlhbnRJZDogc3RyaW5nLFxyXG4gICkge1xyXG4gICAgY29uc3Qgc3RvY2sgPSBhd2FpdCB0aGlzLmludmVudG9yeVNlcnZpY2UuZ2V0U3RvY2soc3RvcmVJZCwgdmFyaWFudElkKTtcclxuICAgIHJldHVybiB7XHJcbiAgICAgIHN0YXR1czogJ3N1Y2Nlc3MnLFxyXG4gICAgICBkYXRhOiBzdG9jayxcclxuICAgIH07XHJcbiAgfVxyXG5cclxuICBAUm9sZXMoJ0FETUlOJylcclxuICBAUG9zdCgncmVzZXJ2ZScpXHJcbiAgYXN5bmMgcmVzZXJ2ZVN0b2NrKFxyXG4gICAgQEJvZHkoJ3N0b3JlSWQnKSBzdG9yZUlkOiBzdHJpbmcsXHJcbiAgICBAQm9keSgndmFyaWFudElkJykgdmFyaWFudElkOiBzdHJpbmcsXHJcbiAgICBAQm9keSgncXVhbnRpdHknKSBxdWFudGl0eTogbnVtYmVyLFxyXG4gICkge1xyXG4gICAgYXdhaXQgdGhpcy5pbnZlbnRvcnlTZXJ2aWNlLnJlc2VydmVTdG9jayhzdG9yZUlkLCB2YXJpYW50SWQsIHF1YW50aXR5IHx8IDEpO1xyXG4gICAgcmV0dXJuIHtcclxuICAgICAgc3RhdHVzOiAnc3VjY2VzcycsXHJcbiAgICAgIG1lc3NhZ2U6IGDEkMOjIGdp4buvIGNo4buXIHRow6BuaCBjw7RuZyAke3F1YW50aXR5IHx8IDF9IHPhuqNuIHBo4bqpbSB04bqhaSBraG8uYCxcclxuICAgIH07XHJcbiAgfVxyXG59XHJcbiJdLCJ2ZXJzaW9uIjozfQ==

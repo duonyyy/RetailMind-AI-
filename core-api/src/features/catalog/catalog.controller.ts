@@ -1,6 +1,8 @@
+import { Public } from '../../shared/decorators/public.decorator';
 import { Controller, Get, Query, Param } from '@nestjs/common';
 import { CatalogService, LaptopFilter } from './catalog.service';
 
+@Public()
 @Controller('catalog')
 export class CatalogController {
   constructor(private readonly catalogService: CatalogService) {}

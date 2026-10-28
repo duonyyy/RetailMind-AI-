@@ -1,5 +1,5 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CatalogModule } from './features/catalog/public-api';
@@ -15,6 +15,8 @@ import { CustomersModule } from './features/customers/public-api';
 import { KnowledgeModule } from './features/knowledge/public-api';
 import { SupportModule } from './features/support/public-api';
 import { AuditModule } from './features/audit/public-api';
+import { JwtAuthGuard } from './shared/guards/jwt-auth.guard';
+import { RolesGuard } from './shared/guards/roles.guard';
 import { CorrelationIdMiddleware } from './shared/middleware/correlation-id.middleware';
 import { TransformResponseInterceptor } from './shared/interceptors/transform-response.interceptor';
 import { AllExceptionsFilter } from './shared/filters/all-exceptions.filter';
@@ -54,6 +56,8 @@ const isDbEnabled = process.env.ENABLE_POSTGRES === 'true';
   ],
   controllers: [],
   providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
     {
       provide: APP_INTERCEPTOR,
       useClass: TransformResponseInterceptor,

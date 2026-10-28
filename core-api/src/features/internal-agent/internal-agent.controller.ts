@@ -1,17 +1,24 @@
+import { Public } from '../../shared/decorators/public.decorator';
 import {
   Controller,
   Post,
   Body,
   Headers,
   UseGuards,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InternalAgentService } from './internal-agent.service';
 import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
 
+@Public()
 @Controller('internal/tools')
 @UseGuards(InternalSecretGuard)
 export class InternalAgentController {
   constructor(private readonly agentService: InternalAgentService) {}
+
+  private commerceUnavailable(): never {
+    throw new ServiceUnavailableException('Thao tác chưa có nguồn dữ liệu và xác nhận nghiệp vụ đáng tin cậy.');
+  }
 
   // 1. Tìm kiếm laptop
   @Post(['catalog-search', 'search_products'])
@@ -37,6 +44,7 @@ export class InternalAgentController {
   // 4. Kiểm tra tồn kho
   @Post(['inventory-check', 'check_inventory'])
   async inventoryCheck(@Body() body: any) {
+    this.commerceUnavailable();
     const res = await this.agentService.checkInventory(body || {});
     return { status: 'success', tool: 'inventory_check', data: res };
   }
@@ -54,6 +62,7 @@ export class InternalAgentController {
     @Headers('x-customer-id') customerIdHeader?: string,
     @Body('customer_id') customerIdBody?: string,
   ) {
+    this.commerceUnavailable();
     const customerId = customerIdHeader || customerIdBody || 'usr-customer-01';
     const res = await this.agentService.viewCart(customerId);
     return { status: 'success', tool: 'view_cart', data: res };
@@ -65,6 +74,7 @@ export class InternalAgentController {
     @Body() body: any,
     @Headers('x-customer-id') customerIdHeader?: string,
   ) {
+    this.commerceUnavailable();
     const customerId = customerIdHeader || body.customer_id || 'usr-customer-01';
     const res = await this.agentService.addToCart(customerId, body || {});
     return { status: 'success', tool: 'add_to_cart', data: res };
@@ -76,6 +86,7 @@ export class InternalAgentController {
     @Body() body: any,
     @Headers('x-customer-id') customerIdHeader?: string,
   ) {
+    this.commerceUnavailable();
     const customerId = customerIdHeader || body.customer_id || 'usr-customer-01';
     const res = await this.agentService.removeFromCart(customerId, body || {});
     return { status: 'success', tool: 'remove_from_cart', data: res };
@@ -84,6 +95,7 @@ export class InternalAgentController {
   // 9. Xem trước đơn hàng & Signed Preview Token
   @Post(['order-preview', 'preview_order'])
   async orderPreview(@Body() body: any) {
+    this.commerceUnavailable();
     const res = await this.agentService.previewOrder(body || {});
     return { status: 'success', tool: 'order_preview', data: res };
   }
@@ -91,6 +103,7 @@ export class InternalAgentController {
   // 10. Trạng thái đơn hàng
   @Post(['order-status', 'get_order_status'])
   async orderStatus(@Body() body: any) {
+    this.commerceUnavailable();
     const res = await this.agentService.getOrderStatus(body || {});
     return { status: 'success', tool: 'get_order_status', data: res };
   }
@@ -98,6 +111,7 @@ export class InternalAgentController {
   // 11. Hủy đơn hàng giả lập
   @Post(['order-cancel', 'cancel_simulated_order'])
   async orderCancel(@Body() body: any) {
+    this.commerceUnavailable();
     const res = await this.agentService.cancelOrder(body || {});
     return { status: 'success', tool: 'cancel_simulated_order', data: res };
   }
@@ -108,6 +122,7 @@ export class InternalAgentController {
     @Body() body: any,
     @Headers('x-customer-id') customerIdHeader?: string,
   ) {
+    this.commerceUnavailable();
     const customerId = customerIdHeader || body.customer_id || 'usr-customer-01';
     const res = await this.agentService.createSupportTicket(customerId, body || {});
     return { status: 'success', tool: 'create_support_ticket', data: res };

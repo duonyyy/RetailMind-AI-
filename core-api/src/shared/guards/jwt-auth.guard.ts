@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { AuthService } from '../../features/auth/auth.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 @Injectable()
@@ -14,9 +15,10 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     private jwtService: JwtService,
+    private authService: AuthService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -34,20 +36,14 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
-      const payload = this.jwtService.verify(token, {
-        secret: process.env.JWT_SECRET || 'retailmind_jwt_secret_development_only',
-      });
-
-      if (payload.isActive === false || payload.is_active === false) {
-        throw new ForbiddenException('Tài khoản đã bị quản trị viên vô hiệu hóa.');
+      const secret = process.env.JWT_SECRET;
+      if (!secret) throw new UnauthorizedException('Chưa cấu hình xác thực.');
+      const payload = this.jwtService.verify(token, { secret, algorithms: ['HS256'] });
+      if (payload.tokenType !== 'access' || typeof payload.sub !== 'string' || typeof payload.exp !== 'number') {
+        throw new UnauthorizedException('Token không hợp lệ.');
       }
-
-      request.user = {
-        id: payload.sub || payload.id,
-        email: payload.email,
-        role: (payload.role || 'CUSTOMER').toUpperCase(),
-        fullName: payload.fullName || payload.name,
-      };
+      const user = await this.authService.getProfile(payload.sub);
+      request.user = { id: user.id, email: user.email, role: user.role, fullName: user.fullName };
 
       return true;
     } catch (err: any) {

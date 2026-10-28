@@ -7,7 +7,8 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
+import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
 import { User } from './entities/user.entity';
 import { Role } from './entities/role.entity';
@@ -36,30 +37,6 @@ export interface AuthResult {
 
 @Injectable()
 export class AuthService {
-  // Pre-hashed fallback users for test / offline mode
-  private readonly fallbackUsers: (UserDTO & { passwordHash: string; isActive: boolean })[] = [
-    {
-      id: '00000000-0000-0000-0000-000000000001',
-      email: 'admin@retailmind.ai',
-      fullName: 'Quản Trị Viên Hệ Thống',
-      role: 'ADMIN',
-      phone: '0901234567',
-      permissions: ['catalog:write', 'inventory:write', 'hitl:approve', 'finops:view', 'admin:manage'],
-      passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$mockadminhash$mockhashvalue',
-      isActive: true,
-    },
-    {
-      id: '00000000-0000-0000-0000-000000000002',
-      email: 'customer@mwg.vn',
-      fullName: 'Nguyễn Văn An (Khách hàng thân thiết)',
-      role: 'CUSTOMER',
-      phone: '0987654321',
-      permissions: ['order:create', 'ticket:create', 'cart:manage'],
-      passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$mockcusthash$mockhashvalue',
-      isActive: true,
-    },
-  ];
-
   constructor(
     private readonly jwtService: JwtService,
     @Optional()
@@ -68,6 +45,7 @@ export class AuthService {
     @Optional()
     @InjectRepository(Role)
     private readonly roleRepo?: Repository<Role>,
+    @Optional() private readonly dataSource?: DataSource,
   ) {}
 
   /**
@@ -81,56 +59,24 @@ export class AuthService {
   }): Promise<AuthResult> {
     const email = dto.email.trim().toLowerCase();
 
-    // Check duplicate
-    if (this.userRepo) {
-      const existing = await this.userRepo.findOne({ where: { email } });
-      if (existing) {
-        throw new ConflictException('Email này đã được đăng ký trong hệ thống.');
-      }
-    } else {
-      if (this.fallbackUsers.some((u) => u.email === email)) {
-        throw new ConflictException('Email này đã được đăng ký trong hệ thống.');
-      }
+    if (!this.userRepo || !this.roleRepo) {
+      throw new UnauthorizedException('Dịch vụ xác thực chưa sẵn sàng.');
+    }
+    if (await this.userRepo.findOne({ where: { email } })) {
+      throw new ConflictException('Email này đã được đăng ký trong hệ thống.');
     }
 
     const passwordHash = await argon2.hash(dto.password, {
       type: argon2.argon2id,
     });
 
-    let userId = `usr-${Date.now()}`;
-
-    if (this.userRepo && this.roleRepo) {
-      let customerRole = await this.roleRepo.findOne({ where: { code: 'CUSTOMER' } });
-      if (!customerRole) {
-        customerRole = await this.roleRepo.save({
-          code: 'CUSTOMER',
-          name: 'Khách hàng',
-          description: 'Người dùng mua sắm tiêu chuẩn',
-        });
-      }
-
-      const newUser = this.userRepo.create({
-        email,
-        passwordHash,
-        fullName: dto.fullName,
-        phone: dto.phone,
-        roleId: customerRole.id,
-        isActive: true,
-      });
-      const saved = await this.userRepo.save(newUser);
-      userId = saved.id;
-    } else {
-      this.fallbackUsers.push({
-        id: userId,
-        email,
-        fullName: dto.fullName,
-        role: 'CUSTOMER',
-        phone: dto.phone,
-        permissions: ['order:create', 'ticket:create', 'cart:manage'],
-        passwordHash,
-        isActive: true,
-      });
-    }
+    const customerRole = await this.roleRepo.findOne({ where: { code: In(['CUSTOMER', 'customer']) } });
+    if (!customerRole) throw new UnauthorizedException('Vai trò khách hàng chưa được cấu hình.');
+    const saved = await this.userRepo.save(this.userRepo.create({
+      email, passwordHash, fullName: dto.fullName, phone: dto.phone,
+      roleId: customerRole.id, isActive: true,
+    }));
+    const userId = saved.id;
 
     const userDto: UserDTO = {
       id: userId,
@@ -141,82 +87,63 @@ export class AuthService {
       permissions: ['order:create', 'ticket:create', 'cart:manage'],
     };
 
-    const tokens = this.generateTokens(userDto);
+    const tokens = await this.generateTokens(userDto);
     return { tokens, user: userDto };
   }
 
   /**
    * Đăng nhập: Xác thực mật khẩu Argon2id, kiểm tra tài khoản hoạt động và cấp cặp token
    */
-  async login(email: string, password?: string, roleOverride?: UserRole): Promise<AuthResult & { token: string }> {
-    const cleanEmail = (email || '').trim().toLowerCase();
-
-    let userDto: UserDTO;
-    let passwordHash: string | undefined;
-    let isActive = true;
-
-    if (this.userRepo) {
-      const dbUser = await this.userRepo.findOne({
-        where: { email: cleanEmail },
-        relations: ['role'],
-      });
-
-      if (dbUser) {
-        passwordHash = dbUser.passwordHash;
-        isActive = dbUser.isActive;
-        userDto = {
-          id: dbUser.id,
-          email: dbUser.email,
-          fullName: dbUser.fullName,
-          role: ((dbUser.role?.code || dbUser.role?.name || 'CUSTOMER') as UserRole),
-          phone: dbUser.phone,
-          permissions: ['order:create', 'cart:manage', 'ticket:create'],
-        };
-      } else {
-        userDto = this.findFallbackUser(cleanEmail, roleOverride);
-      }
-    } else {
-      userDto = this.findFallbackUser(cleanEmail, roleOverride);
-    }
-
-    if (!isActive) {
-      throw new ForbiddenException('Tài khoản này đã bị quản trị viên vô hiệu hóa.');
-    }
-
-    // Verify password if provided
-    if (password && passwordHash && !passwordHash.includes('mock')) {
-      const isValid = await argon2.verify(passwordHash, password);
-      if (!isValid) {
-        throw new UnauthorizedException('Mật khẩu đăng nhập không chính xác.');
-      }
-    }
-
-    const tokens = this.generateTokens(userDto);
-    return {
-      tokens,
-      token: tokens.accessToken,
-      user: userDto,
-    };
+  async login(email: string, password?: string, _roleOverride?: UserRole): Promise<AuthResult & { token: string }> {
+    if (!this.userRepo || !email || !password) throw new UnauthorizedException('Thông tin đăng nhập không hợp lệ.');
+    const user = await this.userRepo.findOne({ where: { email: email.trim().toLowerCase() }, relations: ['role'] });
+    if (!user || !user.passwordHash) throw new UnauthorizedException('Thông tin đăng nhập không hợp lệ.');
+    let valid = false;
+    try { valid = await argon2.verify(user.passwordHash, password); } catch { valid = false; }
+    if (!valid) throw new UnauthorizedException('Thông tin đăng nhập không hợp lệ.');
+    if (!user.isActive) throw new ForbiddenException('Tài khoản đã bị vô hiệu hóa.');
+    const userDto = await this.getProfile(user.id);
+    const tokens = await this.generateTokens(userDto);
+    return { tokens, token: tokens.accessToken, user: userDto };
   }
 
-  /**
-   * Xoay vòng Refresh Token (Token Rotation)
-   */
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
+    if (process.env.AUTH_REFRESH_ENABLED !== 'true') throw new UnauthorizedException('Phiên hết hạn; vui lòng đăng nhập lại.');
+    if (!this.dataSource?.isInitialized || !refreshToken) throw new UnauthorizedException('Phiên không hợp lệ.');
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const runner = this.dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    let replay = false;
     try {
-      const payload = this.jwtService.verify(refreshToken, {
-        secret: process.env.JWT_SECRET || 'retailmind_jwt_secret_production_2026',
-      });
-
-      if (payload.tokenType !== 'refresh') {
-        throw new UnauthorizedException('Mã token không phải là Refresh Token hợp lệ.');
+      const rows = await runner.query('SELECT * FROM auth_refresh_sessions WHERE token_hash = $1 FOR UPDATE', [tokenHash]);
+      const session = rows[0];
+      if (!session) throw new UnauthorizedException('Phiên không hợp lệ.');
+      if (session.used_at || session.revoked_at) {
+        await runner.query('UPDATE auth_refresh_sessions SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL', [session.user_id]);
+        replay = true;
+        await runner.commitTransaction();
+      } else {
+        if (new Date(session.expires_at).getTime() <= Date.now()) throw new UnauthorizedException('Phiên đã hết hạn.');
+        const user = await this.getProfile(session.user_id);
+        const next = this.newRefreshToken();
+        await runner.query('UPDATE auth_refresh_sessions SET used_at = NOW() WHERE id = $1', [session.id]);
+        await runner.query("INSERT INTO auth_refresh_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL '7 days')", [user.id, next.hash]);
+        await runner.commitTransaction();
+        return { accessToken: this.signAccess(user), refreshToken: next.token, expiresIn: 900 };
       }
+    } catch (error) {
+      if (runner.isTransactionActive) await runner.rollbackTransaction();
+      throw error;
+    } finally { await runner.release(); }
+    if (replay) throw new UnauthorizedException('Phiên đã bị thu hồi.');
+    throw new UnauthorizedException('Phiên không hợp lệ.');
+  }
 
-      const user = await this.getProfile(payload.sub);
-      return this.generateTokens(user);
-    } catch {
-      throw new UnauthorizedException('Refresh token đã hết hạn hoặc không hợp lệ.');
-    }
+  async revokeRefreshToken(token?: string): Promise<void> {
+    if (!token || !this.dataSource?.isInitialized) return;
+    const hash = crypto.createHash('sha256').update(token).digest('hex');
+    await this.dataSource.query('UPDATE auth_refresh_sessions SET revoked_at = NOW() WHERE token_hash = $1 AND revoked_at IS NULL', [hash]);
   }
 
   async getProfile(userId: string): Promise<UserDTO> {
@@ -225,65 +152,39 @@ export class AuthService {
         where: { id: userId },
         relations: ['role'],
       });
+      if (dbUser && !dbUser.isActive) throw new ForbiddenException('Tài khoản đã bị vô hiệu hóa.');
+      const roleCode = dbUser?.role?.code?.toUpperCase();
+      if (dbUser && !['CUSTOMER', 'ADMIN'].includes(roleCode)) throw new UnauthorizedException('Vai trò không hợp lệ.');
       if (dbUser) {
         return {
           id: dbUser.id,
           email: dbUser.email,
           fullName: dbUser.fullName,
-          role: ((dbUser.role?.code || dbUser.role?.name || 'CUSTOMER') as UserRole),
+          role: roleCode as UserRole,
           phone: dbUser.phone,
           permissions: ['order:create'],
         };
       }
     }
 
-    const fallback = this.fallbackUsers.find((u) => u.id === userId);
-    return (
-      fallback || {
-        id: userId,
-        email: 'customer@retailmind.ai',
-        fullName: 'Khách hàng',
-        role: 'CUSTOMER',
-        permissions: ['order:create'],
-      }
-    );
+    throw new UnauthorizedException('Tài khoản không tồn tại.');
   }
 
-  private generateTokens(user: UserDTO): AuthTokens {
-    const accessPayload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      fullName: user.fullName,
-      tokenType: 'access',
-    };
-
-    const refreshPayload = {
-      sub: user.id,
-      tokenType: 'refresh',
-    };
-
-    const accessToken = this.jwtService.sign(accessPayload, { expiresIn: '15m' });
-    const refreshToken = this.jwtService.sign(refreshPayload, { expiresIn: '7d' });
-
-    return {
-      accessToken,
-      refreshToken,
-      expiresIn: 900,
-    };
+  private newRefreshToken(): { token: string; hash: string } {
+    const token = crypto.randomBytes(32).toString('base64url');
+    return { token, hash: crypto.createHash('sha256').update(token).digest('hex') };
   }
 
-  private findFallbackUser(email: string, roleOverride?: UserRole): UserDTO {
-    const existing = this.fallbackUsers.find((u) => u.email.toLowerCase() === email);
-    if (existing) {
-      return existing;
-    }
-    return {
-      id: `usr-${Date.now()}`,
-      email: email || 'guest@retailmind.ai',
-      fullName: 'Khách hàng vãng lai',
-      role: roleOverride || 'CUSTOMER',
-      permissions: ['order:create'],
-    };
+  private signAccess(user: UserDTO): string {
+    if (!process.env.JWT_SECRET) throw new UnauthorizedException('Chưa cấu hình xác thực.');
+    return this.jwtService.sign({ sub: user.id, email: user.email, role: user.role, fullName: user.fullName, tokenType: 'access' }, { secret: process.env.JWT_SECRET, expiresIn: '15m', algorithm: 'HS256' });
+  }
+
+  private async generateTokens(user: UserDTO): Promise<AuthTokens> {
+    if (!this.dataSource?.isInitialized) throw new UnauthorizedException('Dịch vụ phiên chưa sẵn sàng.');
+    const refresh = this.newRefreshToken();
+    const accessToken = this.signAccess(user);
+    await this.dataSource.query('INSERT INTO auth_refresh_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL \'7 days\')', [user.id, refresh.hash]);
+    return { accessToken, refreshToken: refresh.token, expiresIn: 900 };
   }
 }

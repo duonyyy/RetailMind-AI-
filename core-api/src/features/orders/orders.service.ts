@@ -156,8 +156,9 @@ export class OrdersService {
     }
 
     // 1. Kiểm tra Idempotency Cache chống gửi đúp (Double-Submit Prevention)
-    if (this.idempotencyCache.has(idempotencyKey)) {
-      return this.idempotencyCache.get(idempotencyKey)!;
+    const scopedKey = `${dto.customerId || ""}:${idempotencyKey}`;
+    if (this.idempotencyCache.has(scopedKey)) {
+      return this.idempotencyCache.get(scopedKey)!;
     }
 
     if (!dto.items || dto.items.length === 0) {
@@ -235,18 +236,19 @@ export class OrdersService {
     };
 
     // 5. Lưu vào sổ cái đơn hàng & cache Idempotency Key
-    this.idempotencyCache.set(idempotencyKey, orderResult);
+    this.idempotencyCache.set(scopedKey, orderResult);
     this.ordersStore.set(orderId, orderResult);
     this.ordersStore.set(orderNo, orderResult);
 
     return orderResult;
   }
 
-  async getOrder(orderIdOrNo: string): Promise<OrderResultDTO> {
+  async getOrder(orderIdOrNo: string, principal?: { id: string; role: string }): Promise<OrderResultDTO> {
     const order = this.ordersStore.get(orderIdOrNo);
     if (!order) {
       throw new NotFoundException(`Không tìm thấy đơn hàng: ${orderIdOrNo}`);
     }
+    if (!principal || (principal.role !== 'ADMIN' && order.customerId !== principal.id)) throw new NotFoundException('Không tìm thấy đơn hàng.');
     return order;
   }
 

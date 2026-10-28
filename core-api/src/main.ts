@@ -1,8 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { assertProductionConfiguration } from './config/production-config.guard';
 
 async function bootstrap() {
+  assertProductionConfiguration();
   const app = await NestFactory.create(AppModule);
 
   // 1. CORS Configuration

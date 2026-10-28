@@ -1,3 +1,5 @@
+import { CurrentUser, AuthenticatedUser } from '../../shared/decorators/current-user.decorator';
+import { Roles } from '../../shared/decorators/roles.decorator';
 import {
   Controller,
   Post,
@@ -9,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { OrdersService, CheckoutInputDTO, OrderItemInput } from './orders.service';
 
+@Roles('CUSTOMER', 'ADMIN')
 @Controller('orders')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
@@ -29,12 +32,13 @@ export class OrdersController {
   async checkout(
     @Body() dto: CheckoutInputDTO,
     @Headers('idempotency-key') idempotencyKey?: string,
+    @CurrentUser() user?: AuthenticatedUser,
   ) {
     const key = idempotencyKey || (dto as any).idempotencyKey;
     if (!key) {
       throw new BadRequestException('Bắt buộc cung cấp Header "Idempotency-Key" để chốt đơn.');
     }
-    const order = await this.ordersService.checkout(dto, key);
+    const order = await this.ordersService.checkout({ ...dto, customerId: user.id }, key);
     return {
       status: 'success',
       message: 'Đặt hàng thành công. Đã giữ chỗ tồn kho tại siêu thị.',
@@ -43,8 +47,8 @@ export class OrdersController {
   }
 
   @Get(':id')
-  async getOrder(@Param('id') id: string) {
-    const order = await this.ordersService.getOrder(id);
+  async getOrder(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    const order = await this.ordersService.getOrder(id, user);
     return {
       status: 'success',
       data: order,

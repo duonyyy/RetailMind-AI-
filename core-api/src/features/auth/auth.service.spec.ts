@@ -1,66 +1,26 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import * as argon2 from 'argon2';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 
-describe('AuthService (Argon2id & Token Rotation)', () => {
-  let authService: AuthService;
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AuthService,
-        {
-          provide: JwtService,
-          useValue: {
-            sign: jest.fn((payload) => `mock_token_${payload.tokenType || 'access'}_${payload.sub}`),
-            verify: jest.fn((token) => ({
-              sub: '00000000-0000-0000-0000-000000000002',
-              tokenType: 'refresh',
-            })),
-          },
-        },
-      ],
-    }).compile();
-
-    authService = module.get<AuthService>(AuthService);
-  });
-
-  it('should register a new customer with Argon2id hash', async () => {
-    const result = await authService.register({
-      email: 'newuser@mwg.vn',
-      password: 'StrongPassword123!',
-      fullName: 'Trần Văn Mới',
-      phone: '0912345678',
-    });
-
-    expect(result.tokens).toBeDefined();
-    expect(result.tokens.accessToken).toBeDefined();
-    expect(result.tokens.refreshToken).toBeDefined();
-    expect(result.user.email).toBe('newuser@mwg.vn');
+describe('AuthService credentials', () => {
+  it('verifies the password and derives the role from the database', async () => {
+    process.env.JWT_SECRET = 'test-secret';
+    const hash = await argon2.hash('correct-password');
+    const record = { id: 'u1', email: 'user@example.com', fullName: 'User', isActive: true, passwordHash: hash, role: { code: 'CUSTOMER' } };
+    const repo = { findOne: jest.fn().mockResolvedValue(record) };
+    const db = { isInitialized: true, query: jest.fn().mockResolvedValue([]) };
+    const jwt = { sign: jest.fn().mockReturnValue('access') };
+    const service = new AuthService(jwt as unknown as JwtService, repo as any, undefined, db as any);
+    await expect(service.login(record.email, 'wrong')).rejects.toThrow();
+    const result = await service.login(record.email, 'correct-password', 'ADMIN');
     expect(result.user.role).toBe('CUSTOMER');
+    expect(result.tokens.accessToken).toBe('access');
+    expect(db.query).toHaveBeenCalledTimes(1);
   });
-
-  it('should prevent registration of existing email', async () => {
-    await expect(
-      authService.register({
-        email: 'customer@mwg.vn',
-        password: 'Password123!',
-        fullName: 'Nguyễn Văn An',
-      }),
-    ).rejects.toThrow('Email này đã được đăng ký');
-  });
-
-  it('should login fallback user and issue access and refresh tokens', async () => {
-    const result = await authService.login('customer@mwg.vn');
-    expect(result.tokens.accessToken).toBeDefined();
-    expect(result.tokens.refreshToken).toBeDefined();
-    expect(result.user.role).toBe('CUSTOMER');
-  });
-
-  it('should rotate tokens on valid refresh token', async () => {
-    const newTokens = await authService.refreshToken('valid_mock_refresh_token');
-    expect(newTokens.accessToken).toBeDefined();
-    expect(newTokens.refreshToken).toBeDefined();
+  it('rejects inactive users even with the correct password', async () => {
+    const hash = await argon2.hash('correct-password');
+    const repo = { findOne: jest.fn().mockResolvedValue({ id: 'u', passwordHash: hash, isActive: false }) };
+    const service = new AuthService({} as JwtService, repo as any);
+    await expect(service.login('user@example.com', 'correct-password')).rejects.toThrow();
   });
 });
-

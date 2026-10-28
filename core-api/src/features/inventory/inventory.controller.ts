@@ -1,3 +1,5 @@
+import { Roles } from '../../shared/decorators/roles.decorator';
+import { Public } from '../../shared/decorators/public.decorator';
 import { Controller, Get, Post, Query, Body } from '@nestjs/common';
 import { InventoryService } from './services/inventory.service';
 
@@ -5,6 +7,7 @@ import { InventoryService } from './services/inventory.service';
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
+  @Public()
   @Get('stores')
   async getStores() {
     const stores = await this.inventoryService.getStores();
@@ -15,6 +18,7 @@ export class InventoryController {
     };
   }
 
+  @Public()
   @Get('stock')
   async getStock(
     @Query('storeId') storeId: string,
@@ -27,6 +31,7 @@ export class InventoryController {
     };
   }
 
+  @Roles('ADMIN')
   @Post('reserve')
   async reserveStock(
     @Body('storeId') storeId: string,

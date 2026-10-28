@@ -1,0 +1,31 @@
+d48d90a1684ea3bd92b31154587f4d7a
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CatalogModule = void 0;
+const common_1 = require("@nestjs/common");
+const typeorm_1 = require("@nestjs/typeorm");
+const variant_entity_1 = require("./entities/variant.entity");
+const product_entity_1 = require("./entities/product.entity");
+const category_entity_1 = require("./entities/category.entity");
+const brand_entity_1 = require("./entities/brand.entity");
+const catalog_service_1 = require("./catalog.service");
+const catalog_controller_1 = require("./catalog.controller");
+const isDbEnabled = process.env.ENABLE_POSTGRES === 'true';
+let CatalogModule = class CatalogModule {
+};
+exports.CatalogModule = CatalogModule;
+exports.CatalogModule = CatalogModule = __decorate([
+    (0, common_1.Module)({
+        imports: isDbEnabled ? [typeorm_1.TypeOrmModule.forFeature([variant_entity_1.Variant, product_entity_1.Product, category_entity_1.Category, brand_entity_1.Brand])] : [],
+        controllers: [catalog_controller_1.CatalogController],
+        providers: [catalog_service_1.CatalogService],
+        exports: [catalog_service_1.CatalogService],
+    })
+], CatalogModule);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcY2F0YWxvZ1xcY2F0YWxvZy5tb2R1bGUudHMiLCJtYXBwaW5ncyI6Ijs7Ozs7Ozs7O0FBQUEsMkNBQXdDO0FBQ3hDLDZDQUFnRDtBQUNoRCw4REFBb0Q7QUFDcEQsOERBQW9EO0FBQ3BELGdFQUFzRDtBQUN0RCwwREFBZ0Q7QUFDaEQsdURBQW1EO0FBQ25ELDZEQUF5RDtBQUV6RCxNQUFNLFdBQVcsR0FBRyxPQUFPLENBQUMsR0FBRyxDQUFDLGVBQWUsS0FBSyxNQUFNLENBQUM7QUFRcEQsSUFBTSxhQUFhLEdBQW5CLE1BQU0sYUFBYTtDQUFHLENBQUE7QUFBaEIsc0NBQWE7d0JBQWIsYUFBYTtJQU56QixJQUFBLGVBQU0sRUFBQztRQUNOLE9BQU8sRUFBRSxXQUFXLENBQUMsQ0FBQyxDQUFDLENBQUMsdUJBQWEsQ0FBQyxVQUFVLENBQUMsQ0FBQyx3QkFBTyxFQUFFLHdCQUFPLEVBQUUsMEJBQVEsRUFBRSxvQkFBSyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxFQUFFO1FBQzNGLFdBQVcsRUFBRSxDQUFDLHNDQUFpQixDQUFDO1FBQ2hDLFNBQVMsRUFBRSxDQUFDLGdDQUFjLENBQUM7UUFDM0IsT0FBTyxFQUFFLENBQUMsZ0NBQWMsQ0FBQztLQUMxQixDQUFDO0dBQ1csYUFBYSxDQUFHIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIkM6XFxVc2Vyc1xcQWRtaW5cXERlc2t0b3BcXEV4Y2VsTUNQXFxNV0dfQUlfRW5naW5lZXJfSW50ZXJ2aWV3X1N0dWR5X0tpdFxcUmV0YWlsTWluZF9BSVxcY29yZS1hcGlcXHNyY1xcZmVhdHVyZXNcXGNhdGFsb2dcXGNhdGFsb2cubW9kdWxlLnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IE1vZHVsZSB9IGZyb20gJ0BuZXN0anMvY29tbW9uJztcbmltcG9ydCB7IFR5cGVPcm1Nb2R1bGUgfSBmcm9tICdAbmVzdGpzL3R5cGVvcm0nO1xuaW1wb3J0IHsgVmFyaWFudCB9IGZyb20gJy4vZW50aXRpZXMvdmFyaWFudC5lbnRpdHknO1xuaW1wb3J0IHsgUHJvZHVjdCB9IGZyb20gJy4vZW50aXRpZXMvcHJvZHVjdC5lbnRpdHknO1xuaW1wb3J0IHsgQ2F0ZWdvcnkgfSBmcm9tICcuL2VudGl0aWVzL2NhdGVnb3J5LmVudGl0eSc7XG5pbXBvcnQgeyBCcmFuZCB9IGZyb20gJy4vZW50aXRpZXMvYnJhbmQuZW50aXR5JztcbmltcG9ydCB7IENhdGFsb2dTZXJ2aWNlIH0gZnJvbSAnLi9jYXRhbG9nLnNlcnZpY2UnO1xuaW1wb3J0IHsgQ2F0YWxvZ0NvbnRyb2xsZXIgfSBmcm9tICcuL2NhdGFsb2cuY29udHJvbGxlcic7XG5cbmNvbnN0IGlzRGJFbmFibGVkID0gcHJvY2Vzcy5lbnYuRU5BQkxFX1BPU1RHUkVTID09PSAndHJ1ZSc7XG5cbkBNb2R1bGUoe1xuICBpbXBvcnRzOiBpc0RiRW5hYmxlZCA/IFtUeXBlT3JtTW9kdWxlLmZvckZlYXR1cmUoW1ZhcmlhbnQsIFByb2R1Y3QsIENhdGVnb3J5LCBCcmFuZF0pXSA6IFtdLFxuICBjb250cm9sbGVyczogW0NhdGFsb2dDb250cm9sbGVyXSxcbiAgcHJvdmlkZXJzOiBbQ2F0YWxvZ1NlcnZpY2VdLFxuICBleHBvcnRzOiBbQ2F0YWxvZ1NlcnZpY2VdLFxufSlcbmV4cG9ydCBjbGFzcyBDYXRhbG9nTW9kdWxlIHt9XG4iXSwidmVyc2lvbiI6M30=

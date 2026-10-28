@@ -1,0 +1,50 @@
+056313b2c55609fa980e902bb0b6d81a
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.OrdersModule = void 0;
+const common_1 = require("@nestjs/common");
+const typeorm_1 = require("@nestjs/typeorm");
+const order_entity_1 = require("./entities/order.entity");
+const order_item_entity_1 = require("./entities/order-item.entity");
+const cart_entity_1 = require("./entities/cart.entity");
+const cart_item_entity_1 = require("./entities/cart-item.entity");
+const support_ticket_entity_1 = require("./entities/support-ticket.entity");
+const idempotency_key_entity_1 = require("./entities/idempotency-key.entity");
+const orders_service_1 = require("./orders.service");
+const orders_controller_1 = require("./orders.controller");
+const public_api_1 = require("../catalog/public-api");
+const public_api_2 = require("../inventory/public-api");
+const isDbEnabled = process.env.ENABLE_POSTGRES === 'true';
+let OrdersModule = class OrdersModule {
+};
+exports.OrdersModule = OrdersModule;
+exports.OrdersModule = OrdersModule = __decorate([
+    (0, common_1.Module)({
+        imports: [
+            ...(isDbEnabled
+                ? [
+                    typeorm_1.TypeOrmModule.forFeature([
+                        order_entity_1.Order,
+                        order_item_entity_1.OrderItem,
+                        cart_entity_1.Cart,
+                        cart_item_entity_1.CartItem,
+                        support_ticket_entity_1.SupportTicket,
+                        idempotency_key_entity_1.IdempotencyKey,
+                    ]),
+                ]
+                : []),
+            public_api_1.CatalogModule,
+            public_api_2.InventoryModule,
+        ],
+        controllers: [orders_controller_1.OrdersController],
+        providers: [orders_service_1.OrdersService],
+        exports: [orders_service_1.OrdersService],
+    })
+], OrdersModule);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcb3JkZXJzXFxvcmRlcnMubW9kdWxlLnRzIiwibWFwcGluZ3MiOiI7Ozs7Ozs7OztBQUFBLDJDQUF3QztBQUN4Qyw2Q0FBZ0Q7QUFDaEQsMERBQWdEO0FBQ2hELG9FQUF5RDtBQUN6RCx3REFBOEM7QUFDOUMsa0VBQXVEO0FBQ3ZELDRFQUFpRTtBQUNqRSw4RUFBbUU7QUFDbkUscURBQWlEO0FBQ2pELDJEQUF1RDtBQUN2RCxzREFBc0Q7QUFDdEQsd0RBQTBEO0FBRTFELE1BQU0sV0FBVyxHQUFHLE9BQU8sQ0FBQyxHQUFHLENBQUMsZUFBZSxLQUFLLE1BQU0sQ0FBQztBQXVCcEQsSUFBTSxZQUFZLEdBQWxCLE1BQU0sWUFBWTtDQUFHLENBQUE7QUFBZixvQ0FBWTt1QkFBWixZQUFZO0lBckJ4QixJQUFBLGVBQU0sRUFBQztRQUNOLE9BQU8sRUFBRTtZQUNQLEdBQUcsQ0FBQyxXQUFXO2dCQUNiLENBQUMsQ0FBQztvQkFDRSx1QkFBYSxDQUFDLFVBQVUsQ0FBQzt3QkFDdkIsb0JBQUs7d0JBQ0wsNkJBQVM7d0JBQ1Qsa0JBQUk7d0JBQ0osMkJBQVE7d0JBQ1IscUNBQWE7d0JBQ2IsdUNBQWM7cUJBQ2YsQ0FBQztpQkFDSDtnQkFDSCxDQUFDLENBQUMsRUFBRSxDQUFDO1lBQ1AsMEJBQWE7WUFDYiw0QkFBZTtTQUNoQjtRQUNELFdBQVcsRUFBRSxDQUFDLG9DQUFnQixDQUFDO1FBQy9CLFNBQVMsRUFBRSxDQUFDLDhCQUFhLENBQUM7UUFDMUIsT0FBTyxFQUFFLENBQUMsOEJBQWEsQ0FBQztLQUN6QixDQUFDO0dBQ1csWUFBWSxDQUFHIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIkM6XFxVc2Vyc1xcQWRtaW5cXERlc2t0b3BcXEV4Y2VsTUNQXFxNV0dfQUlfRW5naW5lZXJfSW50ZXJ2aWV3X1N0dWR5X0tpdFxcUmV0YWlsTWluZF9BSVxcY29yZS1hcGlcXHNyY1xcZmVhdHVyZXNcXG9yZGVyc1xcb3JkZXJzLm1vZHVsZS50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyBNb2R1bGUgfSBmcm9tICdAbmVzdGpzL2NvbW1vbic7XG5pbXBvcnQgeyBUeXBlT3JtTW9kdWxlIH0gZnJvbSAnQG5lc3Rqcy90eXBlb3JtJztcbmltcG9ydCB7IE9yZGVyIH0gZnJvbSAnLi9lbnRpdGllcy9vcmRlci5lbnRpdHknO1xuaW1wb3J0IHsgT3JkZXJJdGVtIH0gZnJvbSAnLi9lbnRpdGllcy9vcmRlci1pdGVtLmVudGl0eSc7XG5pbXBvcnQgeyBDYXJ0IH0gZnJvbSAnLi9lbnRpdGllcy9jYXJ0LmVudGl0eSc7XG5pbXBvcnQgeyBDYXJ0SXRlbSB9IGZyb20gJy4vZW50aXRpZXMvY2FydC1pdGVtLmVudGl0eSc7XG5pbXBvcnQgeyBTdXBwb3J0VGlja2V0IH0gZnJvbSAnLi9lbnRpdGllcy9zdXBwb3J0LXRpY2tldC5lbnRpdHknO1xuaW1wb3J0IHsgSWRlbXBvdGVuY3lLZXkgfSBmcm9tICcuL2VudGl0aWVzL2lkZW1wb3RlbmN5LWtleS5lbnRpdHknO1xuaW1wb3J0IHsgT3JkZXJzU2VydmljZSB9IGZyb20gJy4vb3JkZXJzLnNlcnZpY2UnO1xuaW1wb3J0IHsgT3JkZXJzQ29udHJvbGxlciB9IGZyb20gJy4vb3JkZXJzLmNvbnRyb2xsZXInO1xuaW1wb3J0IHsgQ2F0YWxvZ01vZHVsZSB9IGZyb20gJy4uL2NhdGFsb2cvcHVibGljLWFwaSc7XG5pbXBvcnQgeyBJbnZlbnRvcnlNb2R1bGUgfSBmcm9tICcuLi9pbnZlbnRvcnkvcHVibGljLWFwaSc7XG5cbmNvbnN0IGlzRGJFbmFibGVkID0gcHJvY2Vzcy5lbnYuRU5BQkxFX1BPU1RHUkVTID09PSAndHJ1ZSc7XG5cbkBNb2R1bGUoe1xuICBpbXBvcnRzOiBbXG4gICAgLi4uKGlzRGJFbmFibGVkXG4gICAgICA/IFtcbiAgICAgICAgICBUeXBlT3JtTW9kdWxlLmZvckZlYXR1cmUoW1xuICAgICAgICAgICAgT3JkZXIsXG4gICAgICAgICAgICBPcmRlckl0ZW0sXG4gICAgICAgICAgICBDYXJ0LFxuICAgICAgICAgICAgQ2FydEl0ZW0sXG4gICAgICAgICAgICBTdXBwb3J0VGlja2V0LFxuICAgICAgICAgICAgSWRlbXBvdGVuY3lLZXksXG4gICAgICAgICAgXSksXG4gICAgICAgIF1cbiAgICAgIDogW10pLFxuICAgIENhdGFsb2dNb2R1bGUsXG4gICAgSW52ZW50b3J5TW9kdWxlLFxuICBdLFxuICBjb250cm9sbGVyczogW09yZGVyc0NvbnRyb2xsZXJdLFxuICBwcm92aWRlcnM6IFtPcmRlcnNTZXJ2aWNlXSxcbiAgZXhwb3J0czogW09yZGVyc1NlcnZpY2VdLFxufSlcbmV4cG9ydCBjbGFzcyBPcmRlcnNNb2R1bGUge31cbiJdLCJ2ZXJzaW9uIjozfQ==

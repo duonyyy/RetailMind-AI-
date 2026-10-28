@@ -1,0 +1,29 @@
+1ce82391338d603034b05860d64e7ad2
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.InventoryModule = void 0;
+const common_1 = require("@nestjs/common");
+const typeorm_1 = require("@nestjs/typeorm");
+const inventory_entity_1 = require("./entities/inventory.entity");
+const store_entity_1 = require("./entities/store.entity");
+const inventory_service_1 = require("./services/inventory.service");
+const inventory_controller_1 = require("./inventory.controller");
+const isDbEnabled = process.env.ENABLE_POSTGRES === 'true';
+let InventoryModule = class InventoryModule {
+};
+exports.InventoryModule = InventoryModule;
+exports.InventoryModule = InventoryModule = __decorate([
+    (0, common_1.Module)({
+        imports: isDbEnabled ? [typeorm_1.TypeOrmModule.forFeature([inventory_entity_1.Inventory, store_entity_1.Store])] : [],
+        controllers: [inventory_controller_1.InventoryController],
+        providers: [inventory_service_1.InventoryService],
+        exports: [inventory_service_1.InventoryService],
+    })
+], InventoryModule);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcaW52ZW50b3J5XFxpbnZlbnRvcnkubW9kdWxlLnRzIiwibWFwcGluZ3MiOiI7Ozs7Ozs7OztBQUFBLDJDQUF3QztBQUN4Qyw2Q0FBZ0Q7QUFDaEQsa0VBQXdEO0FBQ3hELDBEQUFnRDtBQUNoRCxvRUFBZ0U7QUFDaEUsaUVBQTZEO0FBRTdELE1BQU0sV0FBVyxHQUFHLE9BQU8sQ0FBQyxHQUFHLENBQUMsZUFBZSxLQUFLLE1BQU0sQ0FBQztBQVFwRCxJQUFNLGVBQWUsR0FBckIsTUFBTSxlQUFlO0NBQUcsQ0FBQTtBQUFsQiwwQ0FBZTswQkFBZixlQUFlO0lBTjNCLElBQUEsZUFBTSxFQUFDO1FBQ04sT0FBTyxFQUFFLFdBQVcsQ0FBQyxDQUFDLENBQUMsQ0FBQyx1QkFBYSxDQUFDLFVBQVUsQ0FBQyxDQUFDLDRCQUFTLEVBQUUsb0JBQUssQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsRUFBRTtRQUMxRSxXQUFXLEVBQUUsQ0FBQywwQ0FBbUIsQ0FBQztRQUNsQyxTQUFTLEVBQUUsQ0FBQyxvQ0FBZ0IsQ0FBQztRQUM3QixPQUFPLEVBQUUsQ0FBQyxvQ0FBZ0IsQ0FBQztLQUM1QixDQUFDO0dBQ1csZUFBZSxDQUFHIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIkM6XFxVc2Vyc1xcQWRtaW5cXERlc2t0b3BcXEV4Y2VsTUNQXFxNV0dfQUlfRW5naW5lZXJfSW50ZXJ2aWV3X1N0dWR5X0tpdFxcUmV0YWlsTWluZF9BSVxcY29yZS1hcGlcXHNyY1xcZmVhdHVyZXNcXGludmVudG9yeVxcaW52ZW50b3J5Lm1vZHVsZS50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyBNb2R1bGUgfSBmcm9tICdAbmVzdGpzL2NvbW1vbic7XG5pbXBvcnQgeyBUeXBlT3JtTW9kdWxlIH0gZnJvbSAnQG5lc3Rqcy90eXBlb3JtJztcbmltcG9ydCB7IEludmVudG9yeSB9IGZyb20gJy4vZW50aXRpZXMvaW52ZW50b3J5LmVudGl0eSc7XG5pbXBvcnQgeyBTdG9yZSB9IGZyb20gJy4vZW50aXRpZXMvc3RvcmUuZW50aXR5JztcbmltcG9ydCB7IEludmVudG9yeVNlcnZpY2UgfSBmcm9tICcuL3NlcnZpY2VzL2ludmVudG9yeS5zZXJ2aWNlJztcbmltcG9ydCB7IEludmVudG9yeUNvbnRyb2xsZXIgfSBmcm9tICcuL2ludmVudG9yeS5jb250cm9sbGVyJztcblxuY29uc3QgaXNEYkVuYWJsZWQgPSBwcm9jZXNzLmVudi5FTkFCTEVfUE9TVEdSRVMgPT09ICd0cnVlJztcblxuQE1vZHVsZSh7XG4gIGltcG9ydHM6IGlzRGJFbmFibGVkID8gW1R5cGVPcm1Nb2R1bGUuZm9yRmVhdHVyZShbSW52ZW50b3J5LCBTdG9yZV0pXSA6IFtdLFxuICBjb250cm9sbGVyczogW0ludmVudG9yeUNvbnRyb2xsZXJdLFxuICBwcm92aWRlcnM6IFtJbnZlbnRvcnlTZXJ2aWNlXSxcbiAgZXhwb3J0czogW0ludmVudG9yeVNlcnZpY2VdLFxufSlcbmV4cG9ydCBjbGFzcyBJbnZlbnRvcnlNb2R1bGUge31cbiJdLCJ2ZXJzaW9uIjozfQ==

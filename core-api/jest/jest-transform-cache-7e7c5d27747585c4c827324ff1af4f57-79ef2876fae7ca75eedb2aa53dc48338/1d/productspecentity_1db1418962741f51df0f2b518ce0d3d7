@@ -1,0 +1,43 @@
+afae95843a00db7746cb877f7dd57b49
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ProductSpec = void 0;
+const typeorm_1 = require("typeorm");
+const variant_entity_1 = require("./variant.entity");
+let ProductSpec = class ProductSpec {
+};
+exports.ProductSpec = ProductSpec;
+__decorate([
+    (0, typeorm_1.PrimaryColumn)({ type: 'uuid' }),
+    __metadata("design:type", String)
+], ProductSpec.prototype, "variant_id", void 0);
+__decorate([
+    (0, typeorm_1.PrimaryColumn)({ type: 'varchar', length: 64 }),
+    __metadata("design:type", String)
+], ProductSpec.prototype, "spec_key", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'text' }),
+    __metadata("design:type", String)
+], ProductSpec.prototype, "spec_value", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 32, default: 'string' }),
+    __metadata("design:type", String)
+], ProductSpec.prototype, "data_type", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => variant_entity_1.Variant, { onDelete: 'RESTRICT' }),
+    (0, typeorm_1.JoinColumn)({ name: 'variant_id' }),
+    __metadata("design:type", variant_entity_1.Variant)
+], ProductSpec.prototype, "variant", void 0);
+exports.ProductSpec = ProductSpec = __decorate([
+    (0, typeorm_1.Entity)('product_specs')
+], ProductSpec);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcY2F0YWxvZ1xcZW50aXRpZXNcXHByb2R1Y3Qtc3BlYy5lbnRpdHkudHMiLCJtYXBwaW5ncyI6Ijs7Ozs7Ozs7Ozs7O0FBQUEscUNBQStFO0FBQy9FLHFEQUEyQztBQUdwQyxJQUFNLFdBQVcsR0FBakIsTUFBTSxXQUFXO0NBZ0J2QixDQUFBO0FBaEJZLGtDQUFXO0FBRXRCO0lBREMsSUFBQSx1QkFBYSxFQUFDLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxDQUFDOzsrQ0FDYjtBQUduQjtJQURDLElBQUEsdUJBQWEsRUFBQyxFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsTUFBTSxFQUFFLEVBQUUsRUFBRSxDQUFDOzs2Q0FDOUI7QUFHakI7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsTUFBTSxFQUFFLENBQUM7OytDQUNOO0FBR25CO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLFNBQVMsRUFBRSxNQUFNLEVBQUUsRUFBRSxFQUFFLE9BQU8sRUFBRSxRQUFRLEVBQUUsQ0FBQzs7OENBQ1A7QUFJcEQ7SUFGQyxJQUFBLG1CQUFTLEVBQUMsR0FBRyxFQUFFLENBQUMsd0JBQU8sRUFBRSxFQUFFLFFBQVEsRUFBRSxVQUFVLEVBQUUsQ0FBQztJQUNsRCxJQUFBLG9CQUFVLEVBQUMsRUFBRSxJQUFJLEVBQUUsWUFBWSxFQUFFLENBQUM7OEJBQ3pCLHdCQUFPOzRDQUFDO3NCQWZQLFdBQVc7SUFEdkIsSUFBQSxnQkFBTSxFQUFDLGVBQWUsQ0FBQztHQUNYLFdBQVcsQ0FnQnZCIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIkM6XFxVc2Vyc1xcQWRtaW5cXERlc2t0b3BcXEV4Y2VsTUNQXFxNV0dfQUlfRW5naW5lZXJfSW50ZXJ2aWV3X1N0dWR5X0tpdFxcUmV0YWlsTWluZF9BSVxcY29yZS1hcGlcXHNyY1xcZmVhdHVyZXNcXGNhdGFsb2dcXGVudGl0aWVzXFxwcm9kdWN0LXNwZWMuZW50aXR5LnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IEVudGl0eSwgUHJpbWFyeUNvbHVtbiwgQ29sdW1uLCBNYW55VG9PbmUsIEpvaW5Db2x1bW4gfSBmcm9tICd0eXBlb3JtJztcbmltcG9ydCB7IFZhcmlhbnQgfSBmcm9tICcuL3ZhcmlhbnQuZW50aXR5JztcblxuQEVudGl0eSgncHJvZHVjdF9zcGVjcycpXG5leHBvcnQgY2xhc3MgUHJvZHVjdFNwZWMge1xuICBAUHJpbWFyeUNvbHVtbih7IHR5cGU6ICd1dWlkJyB9KVxuICB2YXJpYW50X2lkOiBzdHJpbmc7XG5cbiAgQFByaW1hcnlDb2x1bW4oeyB0eXBlOiAndmFyY2hhcicsIGxlbmd0aDogNjQgfSlcbiAgc3BlY19rZXk6IHN0cmluZztcblxuICBAQ29sdW1uKHsgdHlwZTogJ3RleHQnIH0pXG4gIHNwZWNfdmFsdWU6IHN0cmluZztcblxuICBAQ29sdW1uKHsgdHlwZTogJ3ZhcmNoYXInLCBsZW5ndGg6IDMyLCBkZWZhdWx0OiAnc3RyaW5nJyB9KVxuICBkYXRhX3R5cGU6ICdzdHJpbmcnIHwgJ251bWJlcicgfCAnYm9vbGVhbicgfCAnanNvbic7XG5cbiAgQE1hbnlUb09uZSgoKSA9PiBWYXJpYW50LCB7IG9uRGVsZXRlOiAnUkVTVFJJQ1QnIH0pXG4gIEBKb2luQ29sdW1uKHsgbmFtZTogJ3ZhcmlhbnRfaWQnIH0pXG4gIHZhcmlhbnQ/OiBWYXJpYW50O1xufVxuXG4iXSwidmVyc2lvbiI6M30=

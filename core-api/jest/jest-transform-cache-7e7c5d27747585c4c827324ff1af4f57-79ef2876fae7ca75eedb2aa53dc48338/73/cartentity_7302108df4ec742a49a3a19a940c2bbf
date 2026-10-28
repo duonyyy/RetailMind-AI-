@@ -1,0 +1,46 @@
+dd68cfdff26bb9fe630953f0ccb647ee
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Cart = void 0;
+const typeorm_1 = require("typeorm");
+const cart_item_entity_1 = require("./cart-item.entity");
+let Cart = class Cart {
+};
+exports.Cart = Cart;
+__decorate([
+    (0, typeorm_1.PrimaryGeneratedColumn)('uuid'),
+    __metadata("design:type", String)
+], Cart.prototype, "id", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'customer_id', type: 'uuid' }),
+    __metadata("design:type", String)
+], Cart.prototype, "customerId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 20, default: 'active' }),
+    __metadata("design:type", String)
+], Cart.prototype, "status", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => cart_item_entity_1.CartItem, (item) => item.cart, { cascade: true }),
+    __metadata("design:type", Array)
+], Cart.prototype, "items", void 0);
+__decorate([
+    (0, typeorm_1.CreateDateColumn)({ name: 'created_at' }),
+    __metadata("design:type", Date)
+], Cart.prototype, "createdAt", void 0);
+__decorate([
+    (0, typeorm_1.UpdateDateColumn)({ name: 'updated_at' }),
+    __metadata("design:type", Date)
+], Cart.prototype, "updatedAt", void 0);
+exports.Cart = Cart = __decorate([
+    (0, typeorm_1.Entity)('carts')
+], Cart);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcb3JkZXJzXFxlbnRpdGllc1xcY2FydC5lbnRpdHkudHMiLCJtYXBwaW5ncyI6Ijs7Ozs7Ozs7Ozs7O0FBQUEscUNBT2lCO0FBQ2pCLHlEQUE4QztBQUd2QyxJQUFNLElBQUksR0FBVixNQUFNLElBQUk7Q0FrQmhCLENBQUE7QUFsQlksb0JBQUk7QUFFZjtJQURDLElBQUEsZ0NBQXNCLEVBQUMsTUFBTSxDQUFDOztnQ0FDcEI7QUFHWDtJQURDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxhQUFhLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxDQUFDOzt3Q0FDM0I7QUFHbkI7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsU0FBUyxFQUFFLE1BQU0sRUFBRSxFQUFFLEVBQUUsT0FBTyxFQUFFLFFBQVEsRUFBRSxDQUFDOztvQ0FDNUM7QUFHZjtJQURDLElBQUEsbUJBQVMsRUFBQyxHQUFHLEVBQUUsQ0FBQywyQkFBUSxFQUFFLENBQUMsSUFBSSxFQUFFLEVBQUUsQ0FBQyxJQUFJLENBQUMsSUFBSSxFQUFFLEVBQUUsT0FBTyxFQUFFLElBQUksRUFBRSxDQUFDOzttQ0FDaEQ7QUFHbEI7SUFEQyxJQUFBLDBCQUFnQixFQUFDLEVBQUUsSUFBSSxFQUFFLFlBQVksRUFBRSxDQUFDOzhCQUM5QixJQUFJO3VDQUFDO0FBR2hCO0lBREMsSUFBQSwwQkFBZ0IsRUFBQyxFQUFFLElBQUksRUFBRSxZQUFZLEVBQUUsQ0FBQzs4QkFDOUIsSUFBSTt1Q0FBQztlQWpCTCxJQUFJO0lBRGhCLElBQUEsZ0JBQU0sRUFBQyxPQUFPLENBQUM7R0FDSCxJQUFJLENBa0JoQiIsIm5hbWVzIjpbXSwic291cmNlcyI6WyJDOlxcVXNlcnNcXEFkbWluXFxEZXNrdG9wXFxFeGNlbE1DUFxcTVdHX0FJX0VuZ2luZWVyX0ludGVydmlld19TdHVkeV9LaXRcXFJldGFpbE1pbmRfQUlcXGNvcmUtYXBpXFxzcmNcXGZlYXR1cmVzXFxvcmRlcnNcXGVudGl0aWVzXFxjYXJ0LmVudGl0eS50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQge1xuICBFbnRpdHksXG4gIFByaW1hcnlHZW5lcmF0ZWRDb2x1bW4sXG4gIENvbHVtbixcbiAgT25lVG9NYW55LFxuICBDcmVhdGVEYXRlQ29sdW1uLFxuICBVcGRhdGVEYXRlQ29sdW1uLFxufSBmcm9tICd0eXBlb3JtJztcbmltcG9ydCB7IENhcnRJdGVtIH0gZnJvbSAnLi9jYXJ0LWl0ZW0uZW50aXR5JztcblxuQEVudGl0eSgnY2FydHMnKVxuZXhwb3J0IGNsYXNzIENhcnQge1xuICBAUHJpbWFyeUdlbmVyYXRlZENvbHVtbigndXVpZCcpXG4gIGlkOiBzdHJpbmc7XG5cbiAgQENvbHVtbih7IG5hbWU6ICdjdXN0b21lcl9pZCcsIHR5cGU6ICd1dWlkJyB9KVxuICBjdXN0b21lcklkOiBzdHJpbmc7XG5cbiAgQENvbHVtbih7IHR5cGU6ICd2YXJjaGFyJywgbGVuZ3RoOiAyMCwgZGVmYXVsdDogJ2FjdGl2ZScgfSlcbiAgc3RhdHVzOiBzdHJpbmc7XG5cbiAgQE9uZVRvTWFueSgoKSA9PiBDYXJ0SXRlbSwgKGl0ZW0pID0+IGl0ZW0uY2FydCwgeyBjYXNjYWRlOiB0cnVlIH0pXG4gIGl0ZW1zOiBDYXJ0SXRlbVtdO1xuXG4gIEBDcmVhdGVEYXRlQ29sdW1uKHsgbmFtZTogJ2NyZWF0ZWRfYXQnIH0pXG4gIGNyZWF0ZWRBdDogRGF0ZTtcblxuICBAVXBkYXRlRGF0ZUNvbHVtbih7IG5hbWU6ICd1cGRhdGVkX2F0JyB9KVxuICB1cGRhdGVkQXQ6IERhdGU7XG59XG4iXSwidmVyc2lvbiI6M30=

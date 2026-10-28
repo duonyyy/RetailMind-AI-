@@ -16,29 +16,26 @@ export class SupportController {
   @Post('tickets')
   async createTicket(
     @Body() dto: CreateTicketDTO,
-    @CurrentUser() user?: AuthenticatedUser,
-    @Headers('x-customer-id') headerCustomerId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const customerId = user?.id || headerCustomerId || '00000000-0000-0000-0000-000000000002';
+    const customerId = user.id;
     return this.supportService.createTicket(customerId, dto);
   }
 
   @Get('tickets')
   async getTickets(
-    @CurrentUser() user?: AuthenticatedUser,
-    @Headers('x-customer-id') headerCustomerId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const customerId = user?.id || headerCustomerId || '00000000-0000-0000-0000-000000000002';
+    const customerId = user.id;
     return this.supportService.getCustomerTickets(customerId);
   }
 
   @Get('tickets/:id')
   async getTicket(
     @Param('id') ticketId: string,
-    @CurrentUser() user?: AuthenticatedUser,
-    @Headers('x-customer-id') headerCustomerId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const customerId = user?.id || headerCustomerId || '00000000-0000-0000-0000-000000000002';
+    const customerId = user.id;
     return this.supportService.getTicket(ticketId, customerId);
   }
 }

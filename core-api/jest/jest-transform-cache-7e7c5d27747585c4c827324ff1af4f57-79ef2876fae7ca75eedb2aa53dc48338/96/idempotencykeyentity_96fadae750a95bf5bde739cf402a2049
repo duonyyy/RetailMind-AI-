@@ -1,0 +1,42 @@
+e05f11375744d2ca40f05030ea713d3c
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.IdempotencyKey = void 0;
+const typeorm_1 = require("typeorm");
+let IdempotencyKey = class IdempotencyKey {
+};
+exports.IdempotencyKey = IdempotencyKey;
+__decorate([
+    (0, typeorm_1.PrimaryGeneratedColumn)('uuid'),
+    __metadata("design:type", String)
+], IdempotencyKey.prototype, "id", void 0);
+__decorate([
+    (0, typeorm_1.Index)({ unique: true }),
+    (0, typeorm_1.Column)({ type: 'varchar', length: 255 }),
+    __metadata("design:type", String)
+], IdempotencyKey.prototype, "key", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'target_id', type: 'varchar', length: 255 }),
+    __metadata("design:type", String)
+], IdempotencyKey.prototype, "targetId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'response_payload', type: 'jsonb' }),
+    __metadata("design:type", Object)
+], IdempotencyKey.prototype, "responsePayload", void 0);
+__decorate([
+    (0, typeorm_1.CreateDateColumn)({ name: 'created_at' }),
+    __metadata("design:type", Date)
+], IdempotencyKey.prototype, "createdAt", void 0);
+exports.IdempotencyKey = IdempotencyKey = __decorate([
+    (0, typeorm_1.Entity)('idempotency_keys')
+], IdempotencyKey);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcb3JkZXJzXFxlbnRpdGllc1xcaWRlbXBvdGVuY3kta2V5LmVudGl0eS50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7QUFBQSxxQ0FNaUI7QUFHVixJQUFNLGNBQWMsR0FBcEIsTUFBTSxjQUFjO0NBZ0IxQixDQUFBO0FBaEJZLHdDQUFjO0FBRXpCO0lBREMsSUFBQSxnQ0FBc0IsRUFBQyxNQUFNLENBQUM7OzBDQUNwQjtBQUlYO0lBRkMsSUFBQSxlQUFLLEVBQUMsRUFBRSxNQUFNLEVBQUUsSUFBSSxFQUFFLENBQUM7SUFDdkIsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLFNBQVMsRUFBRSxNQUFNLEVBQUUsR0FBRyxFQUFFLENBQUM7OzJDQUM3QjtBQUdaO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLFdBQVcsRUFBRSxJQUFJLEVBQUUsU0FBUyxFQUFFLE1BQU0sRUFBRSxHQUFHLEVBQUUsQ0FBQzs7Z0RBQzNDO0FBR2pCO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLGtCQUFrQixFQUFFLElBQUksRUFBRSxPQUFPLEVBQUUsQ0FBQzs7dURBQ2Y7QUFHckM7SUFEQyxJQUFBLDBCQUFnQixFQUFDLEVBQUUsSUFBSSxFQUFFLFlBQVksRUFBRSxDQUFDOzhCQUM5QixJQUFJO2lEQUFDO3lCQWZMLGNBQWM7SUFEMUIsSUFBQSxnQkFBTSxFQUFDLGtCQUFrQixDQUFDO0dBQ2QsY0FBYyxDQWdCMUIiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiQzpcXFVzZXJzXFxBZG1pblxcRGVza3RvcFxcRXhjZWxNQ1BcXE1XR19BSV9FbmdpbmVlcl9JbnRlcnZpZXdfU3R1ZHlfS2l0XFxSZXRhaWxNaW5kX0FJXFxjb3JlLWFwaVxcc3JjXFxmZWF0dXJlc1xcb3JkZXJzXFxlbnRpdGllc1xcaWRlbXBvdGVuY3kta2V5LmVudGl0eS50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQge1xuICBFbnRpdHksXG4gIFByaW1hcnlHZW5lcmF0ZWRDb2x1bW4sXG4gIENvbHVtbixcbiAgQ3JlYXRlRGF0ZUNvbHVtbixcbiAgSW5kZXgsXG59IGZyb20gJ3R5cGVvcm0nO1xuXG5ARW50aXR5KCdpZGVtcG90ZW5jeV9rZXlzJylcbmV4cG9ydCBjbGFzcyBJZGVtcG90ZW5jeUtleSB7XG4gIEBQcmltYXJ5R2VuZXJhdGVkQ29sdW1uKCd1dWlkJylcbiAgaWQ6IHN0cmluZztcblxuICBASW5kZXgoeyB1bmlxdWU6IHRydWUgfSlcbiAgQENvbHVtbih7IHR5cGU6ICd2YXJjaGFyJywgbGVuZ3RoOiAyNTUgfSlcbiAga2V5OiBzdHJpbmc7XG5cbiAgQENvbHVtbih7IG5hbWU6ICd0YXJnZXRfaWQnLCB0eXBlOiAndmFyY2hhcicsIGxlbmd0aDogMjU1IH0pXG4gIHRhcmdldElkOiBzdHJpbmc7XG5cbiAgQENvbHVtbih7IG5hbWU6ICdyZXNwb25zZV9wYXlsb2FkJywgdHlwZTogJ2pzb25iJyB9KVxuICByZXNwb25zZVBheWxvYWQ6IFJlY29yZDxzdHJpbmcsIGFueT47XG5cbiAgQENyZWF0ZURhdGVDb2x1bW4oeyBuYW1lOiAnY3JlYXRlZF9hdCcgfSlcbiAgY3JlYXRlZEF0OiBEYXRlO1xufVxuIl0sInZlcnNpb24iOjN9

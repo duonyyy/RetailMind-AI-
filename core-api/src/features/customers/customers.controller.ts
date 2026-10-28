@@ -15,10 +15,9 @@ export class CustomersController {
 
   @Get('me')
   async getProfile(
-    @CurrentUser() user?: AuthenticatedUser,
-    @Headers('x-customer-id') headerCustomerId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const customerId = user?.id || headerCustomerId || '00000000-0000-0000-0000-000000000002';
+    const customerId = user.id;
     const profile = await this.customersService.getProfile(customerId);
     if (!profile) {
       throw new NotFoundException('Không tìm thấy thông tin khách hàng.');
@@ -28,10 +27,9 @@ export class CustomersController {
 
   @Get('favorites')
   async getFavorites(
-    @CurrentUser() user?: AuthenticatedUser,
-    @Headers('x-customer-id') headerCustomerId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const customerId = user?.id || headerCustomerId || '00000000-0000-0000-0000-000000000002';
+    const customerId = user.id;
     const favorites = await this.customersService.getFavorites(customerId);
     return { customerId, favorites };
   }
@@ -39,10 +37,9 @@ export class CustomersController {
   @Post('favorites/toggle')
   async toggleFavorite(
     @Body('variantId') variantId: string,
-    @CurrentUser() user?: AuthenticatedUser,
-    @Headers('x-customer-id') headerCustomerId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const customerId = user?.id || headerCustomerId || '00000000-0000-0000-0000-000000000002';
+    const customerId = user.id;
     return this.customersService.toggleFavorite(customerId, variantId);
   }
 }
