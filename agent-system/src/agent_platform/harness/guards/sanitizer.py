@@ -1,7 +1,7 @@
 import re
 import unicodedata
 
-ZERO_WIDTH_CHARS = re.compile(r"[\u200B-\u200D\uFEFF\u200E\u200F]")
+ZERO_WIDTH_CHARS = re.compile(r"[\u200b-\u200f\ufeff\u202a-\u202e\u2060-\u206f\u00ad]")
 
 class InputSanitizer:
     """Removes invisible characters, zero-width spaces and normalizes Unicode."""

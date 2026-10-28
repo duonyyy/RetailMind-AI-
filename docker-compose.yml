@@ -113,7 +113,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-mock_key}
       - PERSISTENCE_ADAPTER=${PERSISTENCE_ADAPTER:-postgres}
       - POSTGRES_URL=${POSTGRES_DOCKER_URL:-postgresql://retailmind_user:secure_password_change_me@postgres:5432/retailmind_db}
-      # - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006/v1/traces
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006/v1/traces
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,15 +122,15 @@ services:
       backend:
         condition: service_started
 
-  # phoenix:
-  #   image: arizephoenix/phoenix:latest
-  #   container_name: retailmind_phoenix
-  #   ports:
-  #     - "6006:6006" # Arize Phoenix UI & OTLP Collector
-  #   environment:
-  #     - PHOENIX_PORT=6006
-  #     - PHOENIX_HOST=0.0.0.0
-  #   restart: unless-stopped
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: retailmind_phoenix
+    ports:
+      - "6006:6006" # Arize Phoenix UI & OTLP Collector
+    environment:
+      - PHOENIX_PORT=6006
+      - PHOENIX_HOST=0.0.0.0
+    restart: unless-stopped
 
   frontend:
     build:

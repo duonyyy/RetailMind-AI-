@@ -197,6 +197,39 @@ class TestPIIMaskerUnit:
         with pytest.raises(PIIRedactionError):
             PIIMasker.mask(deep, max_depth=10, fail_closed=True)
 
+    def test_phone_with_zero_width_space_is_masked(self):
+        """Zero-width space evasion attack on Vietnamese phone number is defeated."""
+        evasive_phone = "090\u200b123\u200b4567"
+        text = f"Số liên hệ của tôi là: {evasive_phone} cần hỗ trợ gấp."
+        masked = PIIMasker.mask_text(text)
+        assert "[REDACTED_PHONE]" in masked
+        assert "\u200b" not in masked
+
+    def test_cccd_with_bom_is_masked(self):
+        """Byte Order Mark (BOM) evasion attack on CCCD 12-digit number is defeated."""
+        evasive_cccd = "001\ufeff099\ufeff012\ufeff345"
+        text = f"Số căn cước công dân: {evasive_cccd} tại chi nhánh."
+        masked = PIIMasker.mask_text(text)
+        assert "[REDACTED_CCCD]" in masked
+        assert "\ufeff" not in masked
+
+    def test_vietnamese_unicode_preserved_after_normalization(self):
+        """Precomposed and decomposed Vietnamese diacritics (Đ, à, ệ) remain intact."""
+        sample_text = "Đơn hàng của bạn tại Đà Nẵng đã được cập nhật thành công, có hiệu lực từ ngày hôm nay."
+        masked = PIIMasker.mask_text(sample_text)
+        assert "Đ" in masked
+        assert "à" in masked
+        assert "ệ" in masked
+        assert masked == sample_text
+
+        # Also verify decomposed Unicode gets normalized cleanly without font/character corruption
+        import unicodedata
+        decomposed = unicodedata.normalize("NFD", "Đơn hàng hệ thống tại Hà Nội")
+        normalized_masked = PIIMasker.mask_text(decomposed)
+        assert "Đ" in normalized_masked
+        assert "ệ" in normalized_masked
+        assert "ộ" in normalized_masked
+
 
 # ===========================================================================
 # 2. Provider Egress Payload Capture Tests

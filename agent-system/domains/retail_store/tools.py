@@ -734,6 +734,20 @@ async def query_order_status(args: OrderStatusInput, ctx: ToolContext) -> Dict[s
     return {**data, "status": "success", "source": "nestjs_commerce_ssot"}
 
 # ---------------------------------------------------------------------------
+@tool(
+    name="lookup_order",
+    description="Tra cứu trạng thái xử lý, vận chuyển và chi tiết giá trị đơn hàng MWG theo mã đơn hàng.",
+    input_model=OrderStatusInput,
+    side_effect=False,
+    allowed_roles=["customer", "admin"],
+    timeout_s=5.0,
+)
+async def lookup_order(args: OrderStatusInput, ctx: ToolContext) -> Dict[str, Any]:
+    """Canonical alias for query_order_status."""
+    return await query_order_status(args, ctx)
+
+
+# ---------------------------------------------------------------------------
 # TOOL 11: Cancel Simulated Order (cancel_simulated_order)
 # ---------------------------------------------------------------------------
 class CancelOrderInput(BaseModel):

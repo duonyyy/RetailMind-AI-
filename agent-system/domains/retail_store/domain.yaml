@@ -38,6 +38,7 @@ tools:
     - remove_from_cart
     - preview_order
     - query_order_status
+    - lookup_order
     - cancel_simulated_order
     - create_support_ticket
     - manage_favorite

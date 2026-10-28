@@ -17,9 +17,24 @@ import copy
 from decimal import Decimal
 import logging
 import re
+import unicodedata
 from typing import Any, Dict, List, Optional, Pattern, Set, Union
 
 logger = logging.getLogger("agent_platform.guards.pii")
+
+ZERO_WIDTH_REGEX: Pattern = re.compile(
+    r"[\u200b-\u200f\ufeff\u202a-\u202e\u2060-\u206f\u00ad]"
+)
+
+
+def sanitize_invisible_characters(text: str) -> str:
+    """Loại bỏ ký tự tàng hình và chuẩn hóa Unicode NFKC."""
+    if not text:
+        return text
+    # 1. Loại bỏ các ký tự zero-width, soft hyphens, direction overrides
+    cleaned = ZERO_WIDTH_REGEX.sub("", text)
+    # 2. Chuẩn hóa về dạng tương đương dựng sẵn (Normalization Form KC)
+    return unicodedata.normalize("NFKC", cleaned)
 
 
 class PIIRedactionError(RuntimeError):
@@ -97,14 +112,19 @@ class PIIMasker:
         "email": EMAIL_REGEX,
     }
 
+    sanitize_invisible_characters = staticmethod(sanitize_invisible_characters)
+
     @classmethod
     def mask_text(cls, text: str) -> str:
         """Applies exact regex redaction on plain text string."""
         if not text:
             return ""
 
+        # Step 0: Sanitize invisible zero-width characters and normalize Unicode NFKC
+        cleaned_text = sanitize_invisible_characters(text)
+
         # Mask auth tokens & api keys
-        masked = cls.BEARER_REGEX.sub("Bearer [REDACTED_TOKEN]", text)
+        masked = cls.BEARER_REGEX.sub("Bearer [REDACTED_TOKEN]", cleaned_text)
         masked = cls.API_KEY_REGEX.sub(cls.PLACEHOLDER_API_KEY, masked)
         masked = cls.QUERY_SECRET_REGEX.sub(r"\1[REDACTED_SECRET]", masked)
 
@@ -244,10 +264,11 @@ class PIIMasker:
         if not data:
             return False
         if isinstance(data, str):
+            cleaned = sanitize_invisible_characters(data)
             return bool(
-                cls.CCCD_REGEX.search(data)
-                or cls.PHONE_REGEX.search(data)
-                or cls.EMAIL_REGEX.search(data)
+                cls.CCCD_REGEX.search(cleaned)
+                or cls.PHONE_REGEX.search(cleaned)
+                or cls.EMAIL_REGEX.search(cleaned)
             )
         if isinstance(data, dict):
             for k, v in data.items():
