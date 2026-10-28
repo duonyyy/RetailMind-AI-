@@ -1,9 +1,12 @@
-"""Production Hybrid Retrieval Engine: BM25Okapi + Dense Vector Mock with RRF k=60 Fusion,
+"""Production Hybrid Retrieval Engine: BM25Okapi + Dense Vector / Qdrant HNSW with RRF k=60 Fusion,
 
 Two-Stage Retrieval (Candidate Pool -> Reranker), and Lost in the Middle Re-ordering.
 """
 
 from __future__ import annotations
+import hashlib
+import logging
+import os
 import re
 import unicodedata
 from difflib import SequenceMatcher
@@ -14,7 +17,7 @@ from agent_platform.rag.ingestion.sanitizer import IngestionSanitizer
 from .reranker import BaseReranker, RerankerFactory
 from rank_bm25 import BM25Okapi
 
-
+logger = logging.getLogger("agent_platform.rag.hybrid")
 T = TypeVar('T')
 
 
@@ -71,8 +74,8 @@ def reorder_context_lost_in_the_middle(documents: List[T]) -> List[T]:
 
 
 class ProductionHybridRetriever:
-    """Hybrid search combining Dense Embeddings and Sparse BM25Okapi via RRF k=60,
-    with Two-Stage Re-ranking and Context Re-ordering.
+    """Hybrid search combining Dense Embeddings (Qdrant HNSW / Local Cosine) and Sparse BM25Okapi
+    via RRF k=60, with Two-Stage Re-ranking and Context Re-ordering.
     """
 
     STOP_WORDS = {"là", "gì", "của", "và", "các", "có", "trong", "được", "cho", "với", "nhất", "như", "thế", "nào", "ở", "tại", "một", "những"}
@@ -83,20 +86,48 @@ class ProductionHybridRetriever:
         rrf_k: int = 60,
         embedder: Optional[BaseEmbeddingClient] = None,
         reranker: Optional[BaseReranker] = None,
+        collection_name: str = "retailmind_policies",
+        qdrant_url: Optional[str] = None,
+        qdrant_api_key: Optional[str] = None,
     ):
         self.corpus = list(corpus) if corpus else []
         self.rrf_k = rrf_k
         self.embedder: BaseEmbeddingClient = embedder or EmbeddingClientFactory.create_client()
         self.reranker: BaseReranker = reranker or RerankerFactory.create_reranker()
+        self.collection_name = collection_name
+        self.qdrant_url = qdrant_url if qdrant_url is not None else os.getenv("QDRANT_URL", "")
+        self.qdrant_api_key = qdrant_api_key if qdrant_api_key is not None else os.getenv("QDRANT_API_KEY", "")
+        self._qdrant_client: Any = None
         self.doc_vectors: Dict[str, List[float]] = {}
         self.tokenized_corpus: List[List[str]] = []
         self.bm25: Optional[BM25Okapi] = None
+        self._init_qdrant_if_configured()
         self._build_index()
 
+    def _init_qdrant_if_configured(self) -> None:
+        if not self.qdrant_url:
+            return
+        try:
+            from qdrant_client import QdrantClient
+            self._qdrant_client = QdrantClient(
+                url=self.qdrant_url,
+                api_key=self.qdrant_api_key or None,
+                timeout=2.0,
+            )
+        except Exception as exc:
+            logger.debug("Qdrant client unavailable (%s), operating in local vector mode.", exc)
+            self._qdrant_client = None
+
+    @staticmethod
+    def _deterministic_point_id(doc_id: str) -> str:
+        """Generates deterministic UUID-formatted hex from document ID for idempotent Qdrant upsert."""
+        digest = hashlib.sha256(doc_id.encode("utf-8")).hexdigest()[:32]
+        return f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:32]}"
+
     def _build_index(self) -> None:
-        """Re-index corpus with Vietnamese Word Segmentation for BM25Okapi and precompute dense vector embeddings."""
+        """Re-index corpus with Vietnamese Word Segmentation for BM25Okapi and precompute dense vector embeddings (syncing to Qdrant if connected)."""
         self.tokenized_corpus = []
-        missing_embed_docs: List[Tuple[str, str]] = []
+        missing_embed_docs: List[Tuple[str, str, Dict[str, Any]]] = []
 
         for doc in self.corpus:
             doc_id = doc.get("id", "")
@@ -104,15 +135,36 @@ class ProductionHybridRetriever:
             segmented = IngestionSanitizer.segment_vietnamese(content).lower()
             self.tokenized_corpus.append(segmented.split())
             if doc_id and doc_id not in self.doc_vectors and content:
-                missing_embed_docs.append((doc_id, content))
+                missing_embed_docs.append((doc_id, content, doc))
 
         self.bm25 = BM25Okapi(self.tokenized_corpus) if self.tokenized_corpus else None
 
         if missing_embed_docs:
             texts = [item[1] for item in missing_embed_docs]
             embeddings = self.embedder.embed_documents(texts)
-            for (doc_id, _), emb in zip(missing_embed_docs, embeddings):
+            for (doc_id, _, _), emb in zip(missing_embed_docs, embeddings):
                 self.doc_vectors[doc_id] = emb
+
+            if self._qdrant_client is not None:
+                try:
+                    from qdrant_client.models import Distance, PointStruct, VectorParams
+                    dim = len(embeddings[0]) if embeddings else 384
+                    if not self._qdrant_client.collection_exists(self.collection_name):
+                        self._qdrant_client.create_collection(
+                            collection_name=self.collection_name,
+                            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+                        )
+                    points = [
+                        PointStruct(
+                            id=self._deterministic_point_id(str(doc_id)),
+                            vector=emb,
+                            payload=doc_payload,
+                        )
+                        for (doc_id, _, doc_payload), emb in zip(missing_embed_docs, embeddings)
+                    ]
+                    self._qdrant_client.upsert(collection_name=self.collection_name, points=points)
+                except Exception as exc:
+                    logger.debug("Qdrant live upsert skipped (%s), using local vector store.", exc)
 
     def add_documents(self, documents: List[Dict[str, Any]]) -> None:
         """Dynamically add new documents or chunks into the retriever corpus and update indices."""
@@ -138,23 +190,12 @@ class ProductionHybridRetriever:
         use_hierarchical_children: bool = True,
         dir_path: Optional[str] = None
     ) -> int:
-        """Ingest raw documents via EnterpriseDocumentLoader and LegalHierarchyChunker into retriever index.
-        
-        Args:
-            loader: Instance of EnterpriseDocumentLoader.
-            chunker: Optional custom chunker (defaults to LegalHierarchyChunker).
-            use_hierarchical_children: If True, uses child chunks for precision indexing.
-            dir_path: Optional directory path to load from.
-            
-        Returns:
-            Number of indexed chunks.
-        """
+        """Ingest raw documents via EnterpriseDocumentLoader and LegalHierarchyChunker into retriever index."""
         from agent_platform.rag.ingestion.legal_chunker import LegalHierarchyChunker
-
 
         chunk_engine = chunker or LegalHierarchyChunker
         docs = loader.load_directory(dir_path) if dir_path else loader.load_directory("data/raw_documents")
-        
+
         new_records: List[Dict[str, Any]] = []
         for doc in docs:
             if not doc.content:
@@ -195,7 +236,6 @@ class ProductionHybridRetriever:
         self.add_documents(new_records)
         return len(new_records)
 
-
     def search_sparse_bm25(self, query: str, top_k: int = 10) -> List[Tuple[Dict[str, Any], int]]:
         if not self.bm25:
             return []
@@ -207,22 +247,31 @@ class ProductionHybridRetriever:
         return [(self.corpus[idx], rank + 1) for rank, idx in enumerate(ranked_idx) if scores[idx] > 0]
 
     def search_dense(self, query: str, top_k: int = 10) -> List[Tuple[Dict[str, Any], int]]:
-        """Dense semantic similarity search using real embedding cosine similarity."""
+        """Dense semantic similarity search using Qdrant HNSW (when online) or local embedding cosine similarity."""
         if not self.corpus or not self.doc_vectors:
             return []
         query_vec = self.embedder.embed_query(query)
-        scored: List[Tuple[Dict[str, Any], float]] = []
 
+        if self._qdrant_client is not None:
+            try:
+                hits = self._qdrant_client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_vec,
+                    limit=top_k,
+                )
+                if hits:
+                    return [(dict(h.payload or {}), rank + 1) for rank, h in enumerate(hits) if float(h.score) > 0.0]
+            except Exception as exc:
+                logger.debug("Qdrant live search fallback (%s)", exc)
+
+        scored: List[Tuple[Dict[str, Any], float]] = []
         for doc in self.corpus:
             doc_id = doc.get("id")
             doc_vec = self.doc_vectors.get(doc_id)
             sim = compute_cosine_similarity(query_vec, doc_vec) if doc_vec else 0.0
             scored.append((doc, sim))
 
-        # Sort descending by cosine similarity
         scored.sort(key=lambda x: x[1], reverse=True)
-
-        # Return (doc, rank 1-based) for top_k items with positive similarity
         return [(doc, rank + 1) for rank, (doc, sim) in enumerate(scored[:top_k]) if sim > 0.0]
 
     def retrieve_hybrid_rrf(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
@@ -273,10 +322,8 @@ class ProductionHybridRetriever:
         if not candidates:
             return []
 
-        # Giai đoạn 2: Tái xếp hạng bằng Cross-Encoder
         reranked_results = self.reranker.rerank(query, candidates, top_k=top_k)
 
-        # Giai đoạn 3: Tái cấu trúc bối cảnh chống Lost in the Middle
         if enable_lost_in_middle_reorder and len(reranked_results) >= 3:
             return reorder_context_lost_in_the_middle(reranked_results)
         return reranked_results

@@ -8,8 +8,8 @@ from agent_platform.harness.tools.registry import ToolRegistry
 from agent_platform.harness.tools.executor import ToolExecutor
 from agent_platform.harness.tools.builtin.search_knowledge import search_knowledge
 from agent_platform.harness.governance.policy import PolicyEngine
-from agent_platform.harness.workflow.builder import build_agent_graph
-from agent_platform.harness.workflow.runner import AgentRunner
+from agent_platform.agents.workflow.builder import build_agent_graph
+from agent_platform.agents.workflow.runner import AgentRunner
 
 def setup_test_environment():
     domain_dir = Path(__file__).parents[2] / "domains" / "retail_store"

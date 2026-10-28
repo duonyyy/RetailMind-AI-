@@ -39,13 +39,17 @@ class FinOpsLedger:
 
     def __init__(self, db_path: str = ":memory:") -> None:
         self.db_path = db_path
-        self._mem_conn = sqlite3.connect(":memory:") if db_path == ":memory:" else None
+        self._mem_conn = (
+            sqlite3.connect(":memory:", check_same_thread=False)
+            if db_path == ":memory:"
+            else None
+        )
         self._init_db()
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._mem_conn:
             return self._mem_conn
-        return sqlite3.connect(self.db_path)
+        return sqlite3.connect(self.db_path, check_same_thread=False)
 
     def _init_db(self) -> None:
         conn = self._get_conn()

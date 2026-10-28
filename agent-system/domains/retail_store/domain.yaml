@@ -29,9 +29,20 @@ tools:
   module: tools.py
   enabled:
     - lookup_laptop_catalog
-    - query_order_status
-    - request_return_or_refund
+    - get_product_details
+    - compare_products
+    - check_inventory
     - search_knowledge
+    - view_cart
+    - add_to_cart
+    - remove_from_cart
+    - preview_order
+    - query_order_status
+    - cancel_simulated_order
+    - create_support_ticket
+    - manage_favorite
+    - calculate_contract_penalty
+    - request_return_or_refund
 
 policies: policies.yaml
 

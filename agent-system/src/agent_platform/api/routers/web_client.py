@@ -1,13 +1,13 @@
-"""RetailMind AI — Legacy Frontend Adapter Router.
+"""RetailMind AI — Web Client & BFF Gateway Router.
 
-Drop-in replacement adapter serving Next.js Frontend Client (apps/frontend):
+Primary Gateway Router serving Next.js Frontend Client (apps/frontend):
 - POST /api/chat/stream: SSE stream conforming to page.tsx parser (thought, citations, hitl_pending, answer, error, [DONE])
 - POST /api/chat: Synchronous JSON chat endpoint
 - GET  /api/hitl/queue: Pending tasks queue formatted for HitlTask frontend interface
 - GET  /api/hitl/pending: Alias for pending queue
 - POST /api/hitl/review: Review and approve/reject HITL task
-- POST /api/hitl/{task_id}/approve: Legacy approval endpoint
-- POST /api/hitl/{task_id}/reject: Legacy rejection endpoint
+- POST /api/hitl/{task_id}/approve: Approval endpoint
+- POST /api/hitl/{task_id}/reject: Rejection endpoint
 - GET  /api/finops/metrics: FinOps metrics for observability dashboard
 """
 
@@ -24,7 +24,7 @@ from agent_platform.harness.guards.sanitizer import InputSanitizer
 from agent_platform.harness.guards.injection import PromptInjectionDetector
 from agent_platform.llm.providers.scripted import ScriptedLLM
 
-router = APIRouter(prefix="/api", tags=["Legacy Frontend Adapter"])
+router = APIRouter(prefix="/api", tags=["Web Client Gateway"])
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +216,19 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request):
         }
 
     principal = Principal(user_id=req.client_id or "default_client", role="customer", tenant_id="retail_store")
+
+    # Check if active domain pack provides an interactive demo helper
+    if harness.pack.pack_dir:
+        demo_file = harness.pack.pack_dir / "demo.py"
+        if demo_file.exists():
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("domain_demo", demo_file)
+            if spec and spec.loader:
+                demo_mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(demo_mod)
+                if hasattr(demo_mod, "dispatch_demo"):
+                    demo_mod.dispatch_demo(harness.llm, clean_query)
+
     state = await harness.execute(
         query=clean_query,
         principal=principal,
@@ -289,29 +302,20 @@ async def review_hitl(req: HitlReviewRequest, request: Request):
     norm_decision: Literal["approved", "rejected"] = "approved" if dec in ("approve", "approved") else "rejected"
 
     try:
-        resolved = await harness.approval_store.resolve(
+        resumed = await harness.resolve_and_resume_hitl(
             approval_id=task_id,
             decision=norm_decision,
             approver_user_id=req.reviewer or "admin",
             note=req.reason or "",
         )
-        # Record tamper-evident audit trail
-        harness.audit_ledger.record_event(
-            event_id=f"audit_hitl_{task_id}",
-            thread_id=resolved.thread_id,
-            user_id=req.reviewer or "admin",
-            role="admin",
-            tenant_id="retail_store",
-            tool_name="hitl_review",
-            input_masked={"task_id": task_id, "decision": norm_decision},
-            decision=norm_decision,
-        )
+        resolved = resumed["approval"]
         return {
             "status": "success",
             "message": f"Tác vụ {task_id} đã được xử lý: {norm_decision.upper()}",
             "task_id": task_id,
             "decision": norm_decision,
             "task": resolved.model_dump(),
+            "resumed_output": resumed.get("resumed_output"),
         }
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Task '{task_id}' không tồn tại trong hàng đợi HITL.")
@@ -336,11 +340,16 @@ async def reject_hitl_endpoint(task_id: str, request: Request):
 # ---------------------------------------------------------------------------
 @router.get("/finops/metrics")
 async def get_finops_metrics(request: Request):
-    """Returns summary FinOps token & latency metrics."""
+    """Returns summary FinOps token & cost metrics from FinOpsLedger (Decimal)."""
+    harness = request.app.state.harness
+    summary = harness.finops_ledger.get_summary()
     return {
-        "total_requests": 42,
-        "total_tokens": 18450,
-        "total_cost_usd": 0.00369,
+        "total_requests": summary["total_calls"],
+        "total_calls": summary["total_calls"],
+        "total_tokens": summary["total_tokens"],
+        "prompt_tokens": summary["prompt_tokens"],
+        "completion_tokens": summary["completion_tokens"],
+        "total_cost_usd": summary["total_cost_usd"],
         "avg_latency_ms": 38.5,
         "circuit_state": "CLOSED",
     }

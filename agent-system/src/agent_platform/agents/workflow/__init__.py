@@ -1,8 +1,8 @@
-from agent_platform.agents.orchestration.builder import (
+from agent_platform.agents.workflow.builder import (
     build_orchestration_graph,
     build_agent_graph,
 )
-from agent_platform.agents.orchestration.runner import (
+from agent_platform.agents.workflow.runner import (
     OrchestratorRunner,
     AgentRunner,
 )

@@ -14,7 +14,7 @@ from agent_platform.llm.providers.scripted import ScriptedLLM
 from agent_platform.harness.tools.registry import ToolRegistry
 from agent_platform.harness.tools.executor import ToolExecutor
 from agent_platform.harness.governance.policy import PolicyEngine
-from agent_platform.harness.workflow.builder import build_agent_graph
+from agent_platform.agents.workflow.builder import build_agent_graph
 
 def test_memory_kv_store_operations():
     async def _run():

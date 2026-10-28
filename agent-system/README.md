@@ -29,9 +29,9 @@ src/agent_platform/
 ├── agents/                  # Tầng Tác tử & Điều phối Thông minh (Agentic Core)
 │   ├── base.py              # BaseAgent (Hợp đồng tác tử trừu tượng với __call__ node protocol)
 │   ├── enterprise_agent.py  # EnterpriseAgent (Persona, lọc tool RBAC, suy luận ReAct và tiếp nhận phản tư Critic)
-│   └── orchestration/       # Tầng Điều phối (LangGraph Cyclic Orchestrator: input_guard -> agent <-> tool_exec <-> critic -> finalize/abstain)
+│   └── workflow/            # Tầng Điều phối (LangGraph Cyclic Workflow: input_guard -> agent <-> tool_exec <-> critic -> finalize/abstain)
 │       ├── builder.py       # Dựng đồ thị điều phối tuần hoàn (build_orchestration_graph)
-│       ├── runner.py        # Quản lý phiên thực thi (OrchestratorRunner)
+│       ├── runner.py        # Quản lý phiên thực thi (OrchestratorRunner / AgentRunner)
 │       └── nodes/           # Các trạm điều phối: input_guard, tool_exec, critic, finalize, abstain
 ├── harness/                 # Tầng Khung Bảo vệ & Dịch vụ Nền tảng (Platform Safety & Infrastructure)
 │   ├── state/               # Lớp 1: Contracts & Principal (AgentState, Evidence, ToolEvent, RBAC Principal)
@@ -80,15 +80,16 @@ pip install pytest pytest-asyncio
 python -m pytest tests
 ```
 Tất cả các bộ test kiểm tra:
-- Khởi tạo & nạp cấu hình không phụ thuộc domain (`test_phase0_setup.py`)
+- Khởi tạo & nạp cấu hình không phụ thuộc domain (`test_platform_setup.py`)
 - Contract test đa nhà cung cấp LLM (`test_llm_providers.py`)
-- Tool execution 9 bước, Idempotency & Tamper-Evident Hash Chain (`test_phase2_tools_and_policy.py`)
-- LangGraph Cyclic Workflow & True Critic reflection (`test_phase3_agent_graph.py`)
-- Phục hồi phiên & lưu trữ bền vững SQLite (`test_phase4_hitl_and_persistence.py`)
-- API FastAPI, Xác thực JWT, Phân quyền RBAC, SSE Streaming (`test_phase5_api_security.py`)
-- FinOps Token Ledger tính tiền chính xác bằng Decimal (`test_phase6_observability_finops.py`)
-- Hệ thống kiểm tra chất lượng tự động (`test_phase7_evals.py`)
-- Gói bán lẻ công nghệ `retail_store` chạy độc lập (`test_phase8_retail_domain.py`)
+- Tool execution 9 bước, Idempotency & Tamper-Evident Hash Chain (`test_tools_and_policy.py`)
+- LangGraph Cyclic Workflow & True Critic reflection (`test_agent_graph.py`)
+- Phục hồi phiên & lưu trữ bền vững SQLite (`test_hitl_and_persistence.py`)
+- API FastAPI, Xác thực JWT, Phân quyền RBAC, SSE Streaming (`test_api_security.py`)
+- FinOps Token Ledger tính tiền chính xác bằng Decimal (`test_observability_finops.py`)
+- Hệ thống kiểm tra chất lượng tự động (`test_evals.py`)
+- Gói bán lẻ công nghệ `retail_store` chạy độc lập (`test_retail_domain.py`)
+- Tương thích giao thức Frontend Web Client (`test_retail_frontend_compat.py`)
 - Kiến trúc tác tử độc lập `BaseAgent` & `EnterpriseAgent` (`test_enterprise_agent.py`)
 
 ### 4.3. Khởi Chạy API Server

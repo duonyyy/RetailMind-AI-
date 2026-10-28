@@ -1,8 +1,9 @@
-"""Phase 8 Extension: Comprehensive Unit & Governance Tests for retail_store Domain Pack."""
+"""Comprehensive Unit & Governance Tests for retail_store Domain Pack."""
 
 import asyncio
 from decimal import Decimal
 from pathlib import Path
+import time
 import pytest
 
 from agent_platform.domain.registry import DomainRegistry
@@ -172,5 +173,152 @@ def test_retail_knowledge_retriever_hybrid():
         )
         assert res.is_error is False
         assert "30 ngày" in res.output or "24 tháng" in res.output
+
+    asyncio.run(_run())
+
+
+def test_sprint1_all_15_retail_tools_and_no_confirm_order():
+    """Sprint 1 Verification: All 15 typed tools work, RBAC enforced, and confirm_order is strictly absent."""
+    async def _run():
+        registry = DomainRegistry("domains")
+        pack = registry.get("retail_store")
+        assert pack is not None
+
+        # Strictly forbid confirm_order tool per AGENTS.md & 04-INTERNAL_TOOL_GATEWAY.md
+        assert "confirm_order" not in pack.tools.enabled
+
+        tool_reg = ToolRegistry()
+        tool_reg.load_from_module_file(pack.pack_dir / pack.tools.module)
+        assert tool_reg.get("confirm_order") is None
+
+        policy = PolicyEngine.load_from_file(pack.pack_dir / pack.policies)
+        executor = ToolExecutor(tool_reg, policy)
+
+        guest = Principal(user_id="guest_01", role="guest")
+        test_uid = f"cust_test_{int(time.time())}"
+        customer = Principal(user_id=test_uid, role="customer")
+
+        # 1. Public tools accessible by guest
+        res_detail = await executor.execute("get_product_details", {"sku": "LAP-ASUS-VIVO15"}, guest, call_id="c1")
+        assert res_detail.is_error is False
+        assert "Vivobook 15 OLED" in res_detail.output
+
+        res_cmp = await executor.execute(
+            "compare_products",
+            {"skus": ["LAP-ASUS-VIVO15", "LAP-DELL-INSP14"]},
+            guest,
+            call_id="c2",
+        )
+        assert res_cmp.is_error is False
+        assert "LAP-ASUS-VIVO15" in res_cmp.output and "LAP-DELL-INSP14" in res_cmp.output
+
+        res_inv = await executor.execute(
+            "check_inventory",
+            {"sku": "LAP-LEN-THINK14", "store_id": "MWG_HCM_001"},
+            guest,
+            call_id="c3",
+        )
+        assert res_inv.is_error is False
+        assert "available_qty" in res_inv.output
+
+        res_pen = await executor.execute(
+            "calculate_contract_penalty",
+            {"breach_value_vnd": "100000000", "agreed_rate_pct": "12"},
+            guest,
+            call_id="c4",
+        )
+        assert res_pen.is_error is False
+        assert "8000000" in res_pen.output
+        assert "true" in res_pen.output.lower()
+
+        # 2. Guest blocked from customer-only cart/order tools
+        res_guest_cart = await executor.execute(
+            "add_to_cart",
+            {"sku": "LAP-ASUS-VIVO15", "quantity": 1},
+            guest,
+            call_id="c5",
+        )
+        assert res_guest_cart.is_error is True
+        assert res_guest_cart.error_code == "forbidden"
+
+        # 3. Customer cart, preview token (10m HMAC), favorite, cancel, support ticket
+        res_add = await executor.execute(
+            "add_to_cart",
+            {"sku": "LAP-ASUS-VIVO15", "quantity": 2},
+            customer,
+            call_id="c6",
+        )
+        assert res_add.is_error is False
+        assert "35980000" in res_add.output
+
+        res_view = await executor.execute("view_cart", {}, customer, call_id="c7")
+        assert res_view.is_error is False
+        assert "35980000" in res_view.output
+
+        res_prev = await executor.execute(
+            "preview_order",
+            {"store_id": "MWG_HCM_001", "discount_code": "MWG500K"},
+            customer,
+            call_id="c8",
+        )
+        assert res_prev.is_error is False
+        assert "prv_" in res_prev.output
+        assert "35480000" in res_prev.output
+
+        res_rem = await executor.execute(
+            "remove_from_cart",
+            {"sku": "LAP-ASUS-VIVO15"},
+            customer,
+            call_id="c9",
+        )
+        assert res_rem.is_error is False
+
+        res_fav = await executor.execute(
+            "manage_favorite",
+            {"sku": "LAP-LEN-THINK14", "action": "add"},
+            customer,
+            call_id="c10",
+        )
+        assert res_fav.is_error is False
+        assert "LAP-LEN-THINK14" in res_fav.output
+
+        res_cancel = await executor.execute(
+            "cancel_simulated_order",
+            {"order_id": "ORD-100201", "reason": "Đổi sang cấu hình cao hơn"},
+            customer,
+            call_id="c11",
+        )
+        assert res_cancel.is_error is False
+        assert "CANCELLED" in res_cancel.output
+
+        res_ticket = await executor.execute(
+            "create_support_ticket",
+            {"order_id": "ORD-100201", "title": "Hỗ trợ cài đặt", "description": "Cần hỗ trợ cài Windows bản quyền"},
+            customer,
+            call_id="c12",
+        )
+        assert res_ticket.is_error is False
+        assert "TCK-" in res_ticket.output
+
+    asyncio.run(_run())
+
+
+def test_sprint3_postgres_and_redis_persistence_adapters():
+    """Sprint 3 Verification: PostgresKVStore and RedisKVStore adhere to KVStorePort contract."""
+    from agent_platform.harness.persistence.postgres import PostgresKVStore
+    from agent_platform.harness.persistence.redis import RedisKVStore
+
+    async def _run():
+        for store in (PostgresKVStore(), RedisKVStore()):
+            await store.set("session:01", {"user": "cust_01", "total": "17990000"}, ttl_seconds=60)
+            fetched = await store.get("session:01")
+            assert fetched == {"user": "cust_01", "total": "17990000"}
+
+            keys = await store.list_keys("session:")
+            assert "session:01" in keys
+
+            deleted = await store.delete("session:01")
+            assert deleted is True
+            assert await store.get("session:01") is None
 
     asyncio.run(_run())

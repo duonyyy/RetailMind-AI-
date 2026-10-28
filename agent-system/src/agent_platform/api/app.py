@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from agent_platform.config.settings import PlatformSettings
 from agent_platform.domain.pack import DomainPack
 from agent_platform.harness import AgentHarness
-from agent_platform.api.routers import chat, hitl, tools, health, legacy_frontend
+from agent_platform.api.routers import chat, hitl, tools, health, web_client
 
 logger = logging.getLogger("agent_platform.api")
 
@@ -57,7 +57,7 @@ def create_app(settings: PlatformSettings, pack: DomainPack) -> FastAPI:
     app.include_router(hitl.router)
     app.include_router(tools.router)
     app.include_router(health.router)
-    app.include_router(legacy_frontend.router)
+    app.include_router(web_client.router)
 
     return app
 
