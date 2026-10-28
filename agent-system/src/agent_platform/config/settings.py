@@ -1,7 +1,8 @@
+import os
 from decimal import Decimal
 from typing import Literal, List, Dict
 from pydantic import BaseModel, Field, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class AppSettings(BaseModel):
     name: str = "RetailMind AI Platform"
@@ -25,10 +26,18 @@ class HarnessSettings(BaseModel):
     rate_limit_window_seconds: int = Field(default=60, ge=1)
 
 class PersistenceSettings(BaseModel):
-    adapter: Literal["memory", "sqlite", "postgres", "redis"] = "memory"
-    sqlite_path: str = "agent_data.db"
-    postgres_url: str = ""
-    redis_url: str = ""
+    adapter: Literal["memory", "sqlite", "postgres", "redis"] = Field(
+        default_factory=lambda: os.getenv("PERSISTENCE_ADAPTER", os.getenv("PERSISTENCE__ADAPTER", "memory"))
+    )
+    sqlite_path: str = Field(
+        default_factory=lambda: os.getenv("SQLITE_PATH", os.getenv("PERSISTENCE_SQLITE_PATH", "agent_data.db"))
+    )
+    postgres_url: str = Field(
+        default_factory=lambda: os.getenv("POSTGRES_URL", os.getenv("PERSISTENCE_POSTGRES_URL", ""))
+    )
+    redis_url: str = Field(
+        default_factory=lambda: os.getenv("REDIS_URL", os.getenv("PERSISTENCE_REDIS_URL", ""))
+    )
 
 class LLMSettings(BaseModel):
     provider: Literal["scripted", "mock", "openai_compat", "gemini"] = "scripted"
@@ -52,6 +61,11 @@ class FeatureFlags(BaseModel):
     enable_cache: bool = True
 
 class PlatformSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
+
     app: AppSettings = Field(default_factory=AppSettings)
     harness: HarnessSettings = Field(default_factory=HarnessSettings)
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)

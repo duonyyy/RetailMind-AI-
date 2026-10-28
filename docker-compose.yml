@@ -111,8 +111,12 @@ services:
       - CORE_API_URL=http://backend:4000
       - INTERNAL_TOOL_SECRET=${INTERNAL_TOOL_SECRET:?INTERNAL_TOOL_SECRET is required}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-mock_key}
+      - PERSISTENCE_ADAPTER=${PERSISTENCE_ADAPTER:-postgres}
+      - POSTGRES_URL=${POSTGRES_DOCKER_URL:-postgresql://retailmind_user:secure_password_change_me@postgres:5432/retailmind_db}
       # - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006/v1/traces
     depends_on:
+      postgres:
+        condition: service_healthy
       qdrant:
         condition: service_healthy
       backend:
