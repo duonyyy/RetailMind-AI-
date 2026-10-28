@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import {
   Bot,
   ShieldCheck,
@@ -84,6 +85,7 @@ export default function Home() {
   const [currentCitations, setCurrentCitations] = useState<CitationItem[]>([]);
   const [currentGrounding, setCurrentGrounding] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showSupportForm, setShowSupportForm] = useState(false);
 
   // --- TAB 2: CATALOG STATE ---
   const [laptops, setLaptops] = useState<LaptopProduct[]>([
@@ -235,6 +237,7 @@ export default function Home() {
     setIsLoading(true);
     setCurrentCitations([]);
     setCurrentGrounding(null);
+    setShowSupportForm(false);
 
     try {
       const endpoint =
@@ -289,6 +292,8 @@ export default function Home() {
                 ]);
               } else if (data.type === 'error') {
                 streamAnswer = `⚠️ ${data.message}`;
+              } else if (data.type === 'support_form' && data.path === '/support') {
+                setShowSupportForm(true);
               }
             } catch {
               // Ignore non-json lines
@@ -605,6 +610,11 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
+                {showSupportForm && (
+                  <Link href="/support" className="inline-block text-sm text-blue-700 underline">
+                    Mở form hỗ trợ để xác nhận thông tin và gửi yêu cầu
+                  </Link>
+                )}
               </div>
 
               {/* Chat Input Area */}

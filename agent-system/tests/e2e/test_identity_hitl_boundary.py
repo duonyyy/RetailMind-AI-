@@ -127,3 +127,18 @@ def test_identity_service_failure_is_not_anonymous(client):
         raise httpx.ConnectError("offline", request=request)
     client.app.state.identity_transport = httpx.MockTransport(unavailable)
     assert client.post("/api/chat", json={"query":"hello"}, headers=auth("alice")).status_code == 503
+
+
+def test_support_handoff_emits_only_form_link_without_pii(client):
+    from agent_platform.harness.state.contracts import ToolEvent
+    async def execute(query, principal, thread_id):
+        return {"thread_id": thread_id, "run_id": "run", "status": "abstained", "final_answer": "Vui lòng mở form hỗ trợ.",
+                "evidence": [], "tool_events": [ToolEvent(tool_name="create_support_ticket", call_id="call", arguments={}, output="unavailable", is_error=True, execution_time_ms=1)]}
+    client.app.state.harness.execute = execute
+    result = client.post('/api/chat/stream', headers=auth('alice'), json={'query': 'Liên hệ 0912345678'})
+    assert result.status_code == 200
+    assert '"type": "support_form"' in result.text
+    assert '"path": "/support"' in result.text
+    assert '0912345678' not in result.text
+    guest = client.post('/api/chat/stream', json={'query': 'hello'})
+    assert '"type": "support_form"' not in guest.text

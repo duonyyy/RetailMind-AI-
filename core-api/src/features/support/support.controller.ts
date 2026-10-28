@@ -8,12 +8,14 @@ import {
 } from '@nestjs/common';
 import { SupportService, CreateTicketDTO } from './support.service';
 import { CurrentUser, AuthenticatedUser } from '../../shared/decorators/current-user.decorator';
+import { Roles } from '../../shared/decorators/roles.decorator';
 
 @Controller('support')
 export class SupportController {
   constructor(private readonly supportService: SupportService) {}
 
   @Post('tickets')
+  @Roles('CUSTOMER')
   async createTicket(
     @Body() dto: CreateTicketDTO,
     @CurrentUser() user: AuthenticatedUser,

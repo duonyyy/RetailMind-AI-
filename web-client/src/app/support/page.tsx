@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { BrandSectionBackground } from "@/components/patterns";
 import {
   Headphones,
@@ -17,11 +17,51 @@ export default function SupportPage() {
   const [orderNo, setOrderNo] = useState("");
   const [description, setDescription] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [ticketCode, setTicketCode] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const phoneLast4 = profilePhone.replace(/\D/g, '').slice(-4);
+  const [phoneConfirmed, setPhoneConfirmed] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/proxy/auth/me', { signal: controller.signal, cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('auth');
+        const body = await response.json();
+        const phone = body?.data?.phone;
+        const digits = typeof phone === 'string' ? phone.replace(/\D/g, '') : '';
+        if (digits.length < 9) throw new Error('phone');
+        setProfilePhone(phone);
+      })
+      .catch((err) => {
+        if (err?.name !== 'AbortError') setError('Hãy đăng nhập và kiểm tra số điện thoại trong hồ sơ trước khi tạo phiếu.');
+      });
+    return () => controller.abort();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description.trim()) return;
-    setSubmitted(true);
+    if (pending || !description.trim() || !orderNo.trim() || !phoneConfirmed || !phoneLast4) return;
+    setError('');
+    setPending(true);
+    try {
+      const response = await fetch('/api/proxy/support/tickets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: orderNo.trim(), title: `Yêu cầu hỗ trợ: ${topic}`, description: description.trim(), confirmedProfilePhone: profilePhone }),
+      });
+      const body = await response.json();
+      if (!response.ok || body?.success !== true || typeof body?.data?.ticketCode !== 'string' || !body.data.ticketCode) {
+        throw new Error('unconfirmed');
+      }
+      setTicketCode(body.data.ticketCode);
+      setSubmitted(true);
+    } catch {
+      setError('Không thể xác nhận phiếu đã được tạo. Vui lòng kiểm tra danh sách phiếu trước khi thử lại.');
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -52,14 +92,15 @@ export default function SupportPage() {
                 Đã tiếp nhận yêu cầu hỗ trợ!
               </h2>
               <p className="text-xs text-slate-600 max-w-md mx-auto">
-                Mã phiếu hỗ trợ: <span className="font-mono font-bold text-slate-900">#TK-20261026-081</span>.
-                Chuyên viên CSKH MWG sẽ liên hệ lại trong vòng 15 phút.
+                Mã phiếu hỗ trợ: <span className="font-mono font-bold text-slate-900">{ticketCode}</span>.
               </p>
               <button
                 onClick={() => {
                   setSubmitted(false);
                   setDescription("");
                   setOrderNo("");
+                  setPhoneConfirmed(false);
+                  setTicketCode("");
                 }}
                 className="ts-cta text-xs py-2 px-4 mt-2"
               >
@@ -91,13 +132,14 @@ export default function SupportPage() {
 
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                  Mã đơn hàng liên quan (nếu có):
+                  Mã đơn hàng của bạn:
                 </label>
                 <input
                   type="text"
                   value={orderNo}
                   onChange={(e) => setOrderNo(e.target.value)}
                   placeholder="VD: MWG-20261026-9812"
+                  required
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -116,9 +158,15 @@ export default function SupportPage() {
                 />
               </div>
 
-              <button type="submit" className="ts-cta text-xs py-2.5 px-5">
+              <label className="flex items-center gap-2 text-xs text-slate-700">
+                <input type="checkbox" checked={phoneConfirmed} onChange={(e) => setPhoneConfirmed(e.target.checked)} disabled={!phoneLast4} />
+                Xác nhận liên hệ qua số điện thoại trong hồ sơ {phoneLast4 ? `(•••• ${phoneLast4})` : '(chưa có số hợp lệ)'}.
+              </label>
+              {error && <p role="alert" className="text-xs text-red-700">{error}</p>}
+
+              <button type="submit" disabled={pending || !phoneConfirmed || !phoneLast4} className="ts-cta text-xs py-2.5 px-5 disabled:opacity-50">
                 <Send className="w-3.5 h-3.5" />
-                <span>Gửi Yêu Cầu Hỗ Trợ</span>
+                <span>{pending ? 'Đang gửi...' : 'Gửi Yêu Cầu Hỗ Trợ'}</span>
               </button>
             </form>
           )}
