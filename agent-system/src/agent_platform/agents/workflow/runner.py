@@ -16,6 +16,7 @@ class OrchestratorRunner:
         principal: Principal,
         thread_id: Optional[str] = None,
         run_id: Optional[str] = None,
+        memory_context: Optional[str] = None,
     ) -> AgentState:
         session_thread_id = thread_id or f"thread_{uuid.uuid4().hex[:12]}"
         session_run_id = run_id or f"run_{uuid.uuid4().hex[:8]}"
@@ -35,6 +36,7 @@ class OrchestratorRunner:
             "pending_tool_calls": [],
             "final_answer": None,
             "grounding_score": None,
+            "memory_context": memory_context,
             "status": "running",
         }
 

@@ -4,6 +4,7 @@ import asyncio
 from decimal import Decimal
 from pathlib import Path
 import time
+import uuid
 import pytest
 
 from agent_platform.domain.registry import DomainRegistry
@@ -100,7 +101,7 @@ def test_retail_refund_governance_tiers():
         assert res_guest.is_error is True
         assert res_guest.error_code == "forbidden"
 
-        # 2. Customer <= 200,000 VNĐ -> Auto-allowed
+        # 2. Policy allows the tier, but no trusted refund service exists
         customer = Principal(user_id="c1", role="customer")
         res_auto = await executor.execute(
             tool_name="request_return_or_refund",
@@ -113,9 +114,9 @@ def test_retail_refund_governance_tiers():
             principal=customer,
             call_id="call_c_auto",
         )
-        assert res_auto.is_error is False
+        assert res_auto.is_error is True
+        assert res_auto.error_code == "unavailable"
         assert res_auto.requires_approval is False
-        assert "processed" in res_auto.output
 
         # 3. Customer > 200,000 VNĐ and <= 2,000,000 VNĐ -> Requires HITL Admin approval
         res_hitl = await executor.execute(
@@ -177,7 +178,7 @@ def test_retail_knowledge_retriever_hybrid():
     asyncio.run(_run())
 
 
-def test_sprint1_all_15_retail_tools_and_no_confirm_order():
+def test_sprint1_all_15_retail_tools_and_no_confirm_order(monkeypatch):
     """Sprint 1 Verification: All 15 typed tools work, RBAC enforced, and confirm_order is strictly absent."""
     async def _run():
         registry = DomainRegistry("domains")
@@ -191,11 +192,15 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order():
         tool_reg.load_from_module_file(pack.pack_dir / pack.tools.module)
         assert tool_reg.get("confirm_order") is None
 
+        async def unavailable_backend(*args, **kwargs):
+            return None
+        monkeypatch.setitem(tool_reg.get("check_inventory").func.__globals__, "_call_nestjs_tool", unavailable_backend)
+
         policy = PolicyEngine.load_from_file(pack.pack_dir / pack.policies)
         executor = ToolExecutor(tool_reg, policy)
 
         guest = Principal(user_id="guest_01", role="guest")
-        test_uid = f"cust_test_{int(time.time())}"
+        test_uid = f"cust_test_{uuid.uuid4().hex[:8]}"
         customer = Principal(user_id=test_uid, role="customer")
 
         # 1. Public tools accessible by guest
@@ -218,8 +223,8 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order():
             guest,
             call_id="c3",
         )
-        assert res_inv.is_error is False
-        assert "available_qty" in res_inv.output
+        assert res_inv.is_error is True
+        assert res_inv.error_code == "unavailable"
 
         res_pen = await executor.execute(
             "calculate_contract_penalty",
@@ -248,12 +253,12 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order():
             customer,
             call_id="c6",
         )
-        assert res_add.is_error is False
-        assert "35980000" in res_add.output
+        assert res_add.is_error is True
+        assert res_add.error_code == "unavailable"
 
         res_view = await executor.execute("view_cart", {}, customer, call_id="c7")
-        assert res_view.is_error is False
-        assert "35980000" in res_view.output
+        assert res_view.is_error is True
+        assert res_view.error_code == "unavailable"
 
         res_prev = await executor.execute(
             "preview_order",
@@ -261,9 +266,8 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order():
             customer,
             call_id="c8",
         )
-        assert res_prev.is_error is False
-        assert "prv_" in res_prev.output
-        assert "35480000" in res_prev.output
+        assert res_prev.is_error is True
+        assert res_prev.error_code == "unavailable"
 
         res_rem = await executor.execute(
             "remove_from_cart",
@@ -271,7 +275,8 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order():
             customer,
             call_id="c9",
         )
-        assert res_rem.is_error is False
+        assert res_rem.is_error is True
+        assert res_rem.error_code == "unavailable"
 
         res_fav = await executor.execute(
             "manage_favorite",
@@ -288,8 +293,8 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order():
             customer,
             call_id="c11",
         )
-        assert res_cancel.is_error is False
-        assert "CANCELLED" in res_cancel.output
+        assert res_cancel.is_error is True
+        assert res_cancel.error_code == "unavailable"
 
         res_ticket = await executor.execute(
             "create_support_ticket",
@@ -297,8 +302,8 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order():
             customer,
             call_id="c12",
         )
-        assert res_ticket.is_error is False
-        assert "TCK-" in res_ticket.output
+        assert res_ticket.is_error is True
+        assert res_ticket.error_code == "unavailable"
 
     asyncio.run(_run())
 

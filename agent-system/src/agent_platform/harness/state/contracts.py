@@ -50,4 +50,5 @@ class AgentState(TypedDict):
     # Final outputs and termination status
     final_answer: Optional[str]
     grounding_score: Optional[float]
+    memory_context: Optional[str]
     status: Literal["running", "awaiting_approval", "done", "abstained", "failed"]

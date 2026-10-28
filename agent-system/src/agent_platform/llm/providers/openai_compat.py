@@ -95,9 +95,12 @@ class OpenAICompatibleLLM(LLMPort):
                     arguments=args if isinstance(args, dict) else {},
                 ))
 
-        usage_data = data.get("usage", {})
+        usage_data = data.get("usage", {}) or {}
+        prompt_details = usage_data.get("prompt_tokens_details", {}) or {}
+        cached_tokens = prompt_details.get("cached_tokens", 0) or usage_data.get("cached_tokens", 0)
         usage = Usage(
             prompt_tokens=usage_data.get("prompt_tokens", 0),
+            cached_prompt_tokens=cached_tokens,
             completion_tokens=usage_data.get("completion_tokens", 0),
             total_tokens=usage_data.get("total_tokens", 0),
         )

@@ -2,6 +2,9 @@ from typing import Callable, Any, Dict, List, Optional, Type
 from pydantic import BaseModel, ConfigDict
 from agent_platform.harness.state.principal import Principal
 
+class ToolUnavailableError(Exception):
+    """A trusted source did not confirm the requested operation."""
+
 class ToolContext(BaseModel):
     """Contextual metadata injected by server into tool execution."""
     principal: Principal

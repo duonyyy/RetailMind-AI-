@@ -15,11 +15,12 @@ import json
 import uuid
 import time
 from typing import Optional, Dict, Any, List, Literal
-from fastapi import APIRouter, Request, HTTPException, Header
+from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent_platform.harness.state.principal import Principal
+from agent_platform.api.deps import get_optional_principal, owned_thread, require_role
 from agent_platform.harness.guards.sanitizer import InputSanitizer
 from agent_platform.harness.guards.injection import PromptInjectionDetector
 from agent_platform.llm.providers.scripted import ScriptedLLM
@@ -32,15 +33,15 @@ router = APIRouter(prefix="/api", tags=["Web Client Gateway"])
 # ---------------------------------------------------------------------------
 class LegacyChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=4000)
-    session_id: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, max_length=128)
     client_id: Optional[str] = "default_client"
 
 
 class HitlReviewRequest(BaseModel):
     task_id: Optional[str] = None
     approval_id: Optional[str] = None
-    decision: Optional[str] = "approved"
-    reviewer: Optional[str] = "admin"
+    decision: Literal["approve", "approved", "reject", "rejected"] = "approved"
+    reviewer: Optional[str] = None
     reason: Optional[str] = ""
 
 
@@ -52,7 +53,7 @@ class HitlReviewRequest(BaseModel):
 async def chat_stream_endpoint(
     req: LegacyChatRequest,
     request: Request,
-    authorization: Optional[str] = Header(None),
+    principal: Principal = Depends(get_optional_principal),
 ):
     """
     Server-Sent Events (SSE) streaming endpoint fully compatible with apps/frontend:
@@ -61,29 +62,10 @@ async def chat_stream_endpoint(
     """
     harness = request.app.state.harness
 
-    # 1. Resolve Principal
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization[7:].strip()
-        if token.startswith("dev:"):
-            parts = token.split(":")
-            user_id = parts[1] if len(parts) > 1 else "dev_user"
-            role = parts[2] if len(parts) > 2 else "customer"
-            tenant = parts[3] if len(parts) > 3 else "retail_store"
-            principal = Principal(user_id=user_id, role=role, tenant_id=tenant)
-        else:
-            principal = Principal(user_id=token, role="customer", tenant_id="retail_store")
-    else:
-        client_id = (
-            request.headers.get("x-forwarded-for")
-            or (request.client.host if request.client else None)
-            or req.client_id
-            or "default_client"
-        )
-        principal = Principal(user_id=client_id, role="customer", tenant_id="retail_store")
-
-    thread_id = req.session_id or f"sess_{uuid.uuid4().hex[:10]}"
+    thread_id = await owned_thread(request, principal, req.session_id)
 
     async def sse_event_generator():
+        yield f"data: {json.dumps({'type': 'session', 'session_id': thread_id})}\n\n"
         # Check input sanitization & prompt injection guard
         clean_query = InputSanitizer.sanitize(req.query)
         if PromptInjectionDetector.is_injection(clean_query):
@@ -204,7 +186,7 @@ async def chat_stream_endpoint(
 # POST /api/chat (Synchronous endpoint for testing & microservices)
 # ---------------------------------------------------------------------------
 @router.post("/chat")
-async def chat_sync_endpoint(req: LegacyChatRequest, request: Request):
+async def chat_sync_endpoint(req: LegacyChatRequest, request: Request, principal: Principal = Depends(get_optional_principal)):
     """Synchronous JSON endpoint returning complete agent execution result."""
     harness = request.app.state.harness
 
@@ -215,7 +197,7 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request):
             "message": "Phát hiện mẫu chỉ thị can thiệp hệ thống nguy hiểm (Prompt Injection).",
         }
 
-    principal = Principal(user_id=req.client_id or "default_client", role="customer", tenant_id="retail_store")
+    thread_id = await owned_thread(request, principal, req.session_id)
 
     # Check if active domain pack provides an interactive demo helper
     if harness.pack.pack_dir:
@@ -232,7 +214,7 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request):
     state = await harness.execute(
         query=clean_query,
         principal=principal,
-        thread_id=req.session_id,
+        thread_id=thread_id,
     )
 
     requires_approval = state.get("status") == "awaiting_approval"
@@ -246,7 +228,8 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request):
     ]
 
     return {
-        "status": "success",
+        "status": "error" if state.get("status") in ("abstained", "failed") else "success",
+        "session_id": thread_id,
         "final_answer": state.get("final_answer") or "Yêu cầu đã được tiếp nhận.",
         "grounding_score": state.get("grounding_score", 0.95) or 0.95,
         "citations": citations_data,
@@ -260,7 +243,7 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request):
 # ---------------------------------------------------------------------------
 @router.get("/hitl/queue")
 @router.get("/hitl/pending")
-async def get_hitl_queue(request: Request):
+async def get_hitl_queue(request: Request, admin: Principal = Depends(require_role("admin"))):
     """Returns list of pending HITL tasks formatted for Frontend interface."""
     harness = request.app.state.harness
     pending_list = await harness.approval_store.list_pending()
@@ -291,9 +274,11 @@ async def get_hitl_queue(request: Request):
 
 
 @router.post("/hitl/review")
-async def review_hitl(req: HitlReviewRequest, request: Request):
+async def review_hitl(req: HitlReviewRequest, request: Request, admin: Principal = Depends(require_role("admin"))):
     """Processes approval/rejection decision submitted by dashboard administrator."""
     harness = request.app.state.harness
+    if req.reviewer is not None and req.reviewer != admin.user_id:
+        raise HTTPException(status_code=403, detail="Reviewer must match the authenticated user.")
     task_id = req.task_id or req.approval_id
     if not task_id:
         raise HTTPException(status_code=400, detail="Thiếu trường 'task_id' hoặc 'approval_id'.")
@@ -305,7 +290,7 @@ async def review_hitl(req: HitlReviewRequest, request: Request):
         resumed = await harness.resolve_and_resume_hitl(
             approval_id=task_id,
             decision=norm_decision,
-            approver_user_id=req.reviewer or "admin",
+            approver_user_id=admin.user_id,
             note=req.reason or "",
         )
         resolved = resumed["approval"]
@@ -319,27 +304,29 @@ async def review_hitl(req: HitlReviewRequest, request: Request):
         }
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Task '{task_id}' không tồn tại trong hàng đợi HITL.")
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
 
 
 @router.post("/hitl/{task_id}/approve")
-async def approve_hitl_endpoint(task_id: str, request: Request):
+async def approve_hitl_endpoint(task_id: str, request: Request, admin: Principal = Depends(require_role("admin"))):
     """Direct approval endpoint for backward compatibility."""
-    return await review_hitl(HitlReviewRequest(task_id=task_id, decision="approved"), request)
+    return await review_hitl(HitlReviewRequest(task_id=task_id, decision="approved"), request, admin)
 
 
 @router.post("/hitl/{task_id}/reject")
-async def reject_hitl_endpoint(task_id: str, request: Request):
+async def reject_hitl_endpoint(task_id: str, request: Request, admin: Principal = Depends(require_role("admin"))):
     """Direct rejection endpoint for backward compatibility."""
-    return await review_hitl(HitlReviewRequest(task_id=task_id, decision="rejected"), request)
+    return await review_hitl(HitlReviewRequest(task_id=task_id, decision="rejected"), request, admin)
 
 
 # ---------------------------------------------------------------------------
 # FINOPS & OBSERVABILITY
 # ---------------------------------------------------------------------------
 @router.get("/finops/metrics")
-async def get_finops_metrics(request: Request):
+async def get_finops_metrics(request: Request, admin: Principal = Depends(require_role("admin"))):
     """Returns summary FinOps token & cost metrics from FinOpsLedger (Decimal)."""
     harness = request.app.state.harness
     summary = harness.finops_ledger.get_summary()

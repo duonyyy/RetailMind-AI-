@@ -49,5 +49,7 @@ async def resolve_approval(
         return result["approval"]
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Approval request '{approval_id}' not found.")
+    except PermissionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

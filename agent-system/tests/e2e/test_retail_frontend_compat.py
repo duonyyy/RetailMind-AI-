@@ -7,6 +7,7 @@ for apps/agent, communicating seamlessly with Next.js Frontend Client (apps/fron
 import json
 from pathlib import Path
 import pytest
+import httpx
 from fastapi.testclient import TestClient
 
 from agent_platform.config.loader import load_settings
@@ -19,6 +20,11 @@ def create_retail_test_client() -> TestClient:
     domain_dir = Path(__file__).parents[2] / "domains" / "retail_store"
     pack = DomainPack.load_from_dir(domain_dir)
     app = create_app(settings=settings, pack=pack)
+    def identity(request):
+        identities = {"Bearer test-customer": ("alice", "CUSTOMER"), "Bearer test-admin": ("boss", "ADMIN")}
+        profile = identities.get(request.headers.get("authorization"))
+        return httpx.Response(200, json={"data": {"id": profile[0], "role": profile[1]}}) if profile else httpx.Response(401)
+    app.state.identity_transport = httpx.MockTransport(identity)
     return TestClient(app)
 
 
@@ -84,6 +90,7 @@ def test_chat_stream_hitl_escalation_for_high_refund():
     resp = client.post(
         "/api/chat/stream",
         json={"query": "Tôi muốn yêu cầu bồi hoàn 500.000 VNĐ cho đơn hàng ORD-100201 vì giao trễ 3 giờ"},
+        headers={"Authorization": "Bearer test-customer"},
     )
     assert resp.status_code == 200
     body = resp.text
@@ -103,19 +110,20 @@ def test_chat_stream_hitl_escalation_for_high_refund():
 
 
 def test_hitl_queue_and_review_workflow():
-    """Validates the complete HITL lifecycle: pending queue -> admin approval -> queue update."""
+    """Approvals are blocked pending a safe resume contract; admins can reject."""
     client = create_retail_test_client()
 
     # Step 1: Trigger HITL task via stream
     resp = client.post(
         "/api/chat/stream",
         json={"query": "Tôi muốn bồi hoàn 500000 cho đơn hàng ORD-100201 do hàng trầy xước"},
+        headers={"Authorization": "Bearer test-customer"},
     )
     assert resp.status_code == 200
     assert "hitl_pending" in resp.text
 
     # Step 2: Fetch HITL queue
-    queue_resp = client.get("/api/hitl/queue")
+    queue_resp = client.get("/api/hitl/queue", headers={"Authorization": "Bearer test-admin"})
     assert queue_resp.status_code == 200
     queue = queue_resp.json()
     assert len(queue) >= 1
@@ -133,16 +141,17 @@ def test_hitl_queue_and_review_workflow():
         json={
             "task_id": task_id,
             "decision": "approved",
-            "reviewer": "store_manager_01",
+            "reviewer": "boss",
             "reason": "Xác nhận hàng trầy xước từ biên bản giao nhận.",
         },
+        headers={"Authorization": "Bearer test-admin"},
     )
-    assert review_resp.status_code == 200
-    assert review_resp.json()["status"] == "success"
-    assert "APPROVED" in review_resp.json()["message"]
+    assert review_resp.status_code == 409
+    rejection = client.post(f"/api/hitl/{task_id}/reject", headers={"Authorization": "Bearer test-admin"})
+    assert rejection.status_code == 200
 
     # Step 4: Verify task is resolved and not in pending queue anymore
-    queue_after = client.get("/api/hitl/queue").json()
+    queue_after = client.get("/api/hitl/queue", headers={"Authorization": "Bearer test-admin"}).json()
     assert not any(t["task_id"] == task_id for t in queue_after)
 
 
@@ -195,7 +204,7 @@ def test_finops_and_health_endpoints():
     assert health_resp.json()["status"] == "healthy"
 
     # FinOps metrics
-    finops_resp = client.get("/api/finops/metrics")
+    finops_resp = client.get("/api/finops/metrics", headers={"Authorization": "Bearer test-admin"})
     assert finops_resp.status_code == 200
     finops_data = finops_resp.json()
     assert "total_requests" in finops_data

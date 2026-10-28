@@ -3,14 +3,14 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from agent_platform.harness.state.principal import Principal
-from agent_platform.api.deps import get_principal
+from agent_platform.api.deps import get_optional_principal, owned_thread
 from agent_platform.api.sse import format_sse_event
 
 router = APIRouter(prefix="/v1", tags=["Chat"])
 
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
-    thread_id: Optional[str] = None
+    thread_id: Optional[str] = Field(default=None, max_length=128)
 
 class ChatResponse(BaseModel):
     thread_id: str
@@ -24,14 +24,15 @@ class ChatResponse(BaseModel):
 async def chat_endpoint(
     req: ChatRequest,
     request: Request,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(get_optional_principal),
 ):
     """Synchronous JSON chat endpoint."""
     harness = request.app.state.harness
+    thread_id = await owned_thread(request, principal, req.thread_id)
     state = await harness.execute(
         query=req.query,
         principal=principal,
-        thread_id=req.thread_id,
+        thread_id=thread_id,
     )
 
     citations = [ev.source_document for ev in state.get("evidence", [])]
@@ -48,18 +49,19 @@ async def chat_endpoint(
 async def chat_stream_endpoint(
     req: ChatRequest,
     request: Request,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(get_optional_principal),
 ):
     """Server-Sent Events (SSE) streaming chat endpoint."""
     harness = request.app.state.harness
+    thread_id = await owned_thread(request, principal, req.thread_id)
 
     async def sse_generator():
-        yield format_sse_event("run.started", {"query": req.query, "user_id": principal.user_id})
+        yield format_sse_event("run.started", {"query": req.query, "user_id": principal.user_id, "thread_id": thread_id})
 
         state = await harness.execute(
             query=req.query,
             principal=principal,
-            thread_id=req.thread_id,
+            thread_id=thread_id,
         )
 
         if state.get("final_answer"):

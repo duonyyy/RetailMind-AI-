@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 from pydantic import ValidationError
 from agent_platform.harness.state.principal import Principal
 from agent_platform.harness.tools.registry import ToolRegistry
-from agent_platform.harness.tools.spec import ToolContext
+from agent_platform.harness.tools.spec import ToolContext, ToolUnavailableError
 from agent_platform.harness.tools.idempotency import IdempotencyManager
 from agent_platform.harness.governance.policy import PolicyEngine
 from agent_platform.harness.governance.audit_ledger import TamperEvidentHashChainLedger
@@ -160,9 +160,12 @@ class ToolExecutor:
                 exec_coro = asyncio.to_thread(fn, validated_args, ctx)
 
             raw_output = await asyncio.wait_for(exec_coro, timeout=tool_spec.timeout_s)
+        except ToolUnavailableError as exc:
+            return ToolExecutionResult(output=str(exc), is_error=True, error_code="unavailable")
         except asyncio.TimeoutError:
             return ToolExecutionResult(
-                output=f"Execution error: Tool '{tool_name}' timed out after {tool_spec.timeout_s}s.",
+                output=("Không thể xác nhận kết quả thao tác; hãy kiểm tra trạng thái trước khi thử lại."
+                        if tool_spec.side_effect else f"Execution error: Tool '{tool_name}' timed out after {tool_spec.timeout_s}s."),
                 is_error=True,
                 error_code="timeout",
             )

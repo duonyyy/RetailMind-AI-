@@ -1,5 +1,3 @@
-import inspect
-import asyncio
 import uuid
 from typing import Optional, Dict, Any, AsyncIterator, Literal
 from langgraph.checkpoint.memory import MemorySaver
@@ -10,16 +8,17 @@ from agent_platform.harness.state.contracts import AgentState
 from agent_platform.harness.tools.registry import ToolRegistry
 from agent_platform.harness.tools.executor import ToolExecutor
 from agent_platform.harness.tools.idempotency import IdempotencyManager
-from agent_platform.harness.tools.spec import ToolContext
 from agent_platform.harness.tools.builtin.search_knowledge import search_knowledge
 from agent_platform.harness.governance.policy import PolicyEngine
 from agent_platform.harness.governance.audit_ledger import TamperEvidentHashChainLedger
 from agent_platform.harness.hitl.approval_store import ApprovalStore, ApprovalRequest
 from agent_platform.harness.observability.finops import FinOpsLedger
+from agent_platform.harness.memory import EnterpriseMemoryManager
 from agent_platform.harness.persistence.memory.adapter import MemoryKVStore
 from agent_platform.harness.persistence.sqlite.adapter import SqliteKVStore
 from agent_platform.harness.persistence.postgres.adapter import PostgresKVStore
 from agent_platform.harness.persistence.redis.adapter import RedisKVStore
+from agent_platform.harness.persistence.checkpointer import create_checkpointer
 from agent_platform.agents.workflow import (
     build_orchestration_graph,
     OrchestratorRunner,
@@ -53,14 +52,20 @@ class AgentHarness:
         else:
             self.kv_store = MemoryKVStore()
 
-        # 2. Checkpointer
-        self.checkpointer = MemorySaver()
+        # 2. Checkpointer (Enterprise Multi-Adapter Persistent Checkpointer)
+        self.checkpointer = create_checkpointer(self.settings)
 
         # 3. Governance: Policy, Audit & FinOps Ledger
         policy_path = pack.pack_dir / pack.policies if pack.pack_dir else "policies.yaml"
         self.policy_engine = PolicyEngine.load_from_file(policy_path)
         self.audit_ledger = TamperEvidentHashChainLedger()
         self.finops_ledger = FinOpsLedger()
+
+        # 3b. Enterprise Multi-Tier Memory Engine (VinAI Track 3 architecture)
+        self.memory = EnterpriseMemoryManager(
+            short_term_capacity=pack.limits.max_steps,
+            total_context_tokens=pack.limits.context_token_budget,
+        )
 
         # 4. Tools Platform
         self.tool_registry = ToolRegistry()
@@ -123,8 +128,27 @@ class AgentHarness:
         principal: Principal,
         thread_id: Optional[str] = None,
     ) -> AgentState:
-        """Executes full agent reasoning cycle, records FinOps telemetry, and returns completed state."""
-        state = await self.runner.execute(query=query, principal=principal, thread_id=thread_id)
+        """Executes full agent reasoning cycle, records FinOps telemetry, updates memory, and returns completed state."""
+        session_key = thread_id or f"thread_{uuid.uuid4().hex[:12]}"
+        user_id = principal.user_id if principal else None
+        context_tuple = self.memory.retrieve_merged_context(
+            user_id=user_id or "",
+            session_id=session_key,
+            query=query,
+        )
+        mem_ctx = context_tuple[0] if isinstance(context_tuple, tuple) else context_tuple
+
+        state = await self.runner.execute(
+            query=query,
+            principal=principal,
+            thread_id=session_key,
+            memory_context=mem_ctx if mem_ctx else None,
+        )
+
+        # Update Tier 1 working memory turns
+        self.memory.add_working_turn(session_key, "user", query)
+        if ans_text := state.get("final_answer"):
+            self.memory.add_working_turn(session_key, "assistant", ans_text)
 
         # Record FinOps usage in Decimal ledger
         ans_text = state.get("final_answer") or ""
@@ -151,36 +175,18 @@ class AgentHarness:
         approver_user_id: str,
         note: str = "",
     ) -> Dict[str, Any]:
-        """Resolves pending HITL request, resumes deferred tool execution if approved, and records audit trail."""
+        """Reject safely; approval stays pending until requester-bound execution exists."""
+        # The existing approval record does not bind the original authenticated
+        # requester, and direct invocation below would bypass executor/ownership checks.
+        # Leave the request pending until a safe resume contract exists.
+        if decision == "approved":
+            raise PermissionError("Approval execution is disabled until requester ownership can be verified.")
         resolved: ApprovalRequest = await self.approval_store.resolve(
             approval_id=approval_id,
             decision=decision,
             approver_user_id=approver_user_id,
             note=note,
         )
-
-        resumed_output: Optional[Any] = None
-        if decision == "approved":
-            tool_spec = self.tool_registry.get(resolved.tool_name)
-            if tool_spec:
-                idem_key = self.idempotency.generate_key(resolved.thread_id, f"hitl_{approval_id}")
-                if self.idempotency.has(idem_key):
-                    resumed_output = self.idempotency.get(idem_key)
-                else:
-                    validated_args = tool_spec.input_model(**resolved.arguments)
-                    ctx = ToolContext(
-                        principal=Principal(user_id=approver_user_id, role="admin", tenant_id=self.pack.name),
-                        idempotency_key=idem_key,
-                        thread_id=resolved.thread_id,
-                        run_id=resolved.run_id,
-                    )
-                    fn = tool_spec.func
-                    if inspect.iscoroutinefunction(fn):
-                        resumed_output = await fn(validated_args, ctx)
-                    else:
-                        resumed_output = await asyncio.to_thread(fn, validated_args, ctx)
-                    if tool_spec.side_effect:
-                        self.idempotency.record(idem_key, resumed_output)
 
         self.audit_ledger.record_event(
             event_id=f"audit_hitl_{approval_id}",
@@ -195,5 +201,5 @@ class AgentHarness:
 
         return {
             "approval": resolved,
-            "resumed_output": resumed_output,
+            "resumed_output": None,
         }

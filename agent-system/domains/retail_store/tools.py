@@ -8,8 +8,6 @@ Adheres strictly to ADR-007, 04-INTERNAL_TOOL_GATEWAY.md & AGENTS.md:
 - Strictly NO confirm_order tool (Agent stops at preview_order with 10-minute HMAC preview_token)
 """
 
-import hashlib
-import hmac
 import json
 import logging
 import os
@@ -21,13 +19,12 @@ from typing import Any, Dict, List, Literal, Optional
 import httpx
 from pydantic import BaseModel, Field
 
-from agent_platform.harness.tools.spec import tool, ToolContext
+from agent_platform.harness.tools.spec import tool, ToolContext, ToolUnavailableError
 from agent_platform.rag.retrieval.hybrid_engine import ProductionHybridRetriever as PlatformHybridRetriever
 
 logger = logging.getLogger("retail_store.tools")
 NESTJS_BACKEND_URL = os.getenv("NESTJS_BACKEND_URL", "http://localhost:3001")
 INTERNAL_TOOL_SECRET = os.getenv("INTERNAL_TOOL_SECRET", "secret_token_internal_retailmind")
-PREVIEW_TOKEN_SECRET = os.getenv("PREVIEW_TOKEN_SECRET", "retailmind_hmac_preview_secret_2026")
 
 # ---------------------------------------------------------------------------
 # SSOT Data Baseline: MWG Laptop Catalog & Stores (Decimal Currency)
@@ -96,9 +93,7 @@ STORE_BRANCHES: Dict[str, Dict[str, Any]] = {
 }
 
 # In-memory fallback state for offline execution & unit testing
-_FALLBACK_CARTS: Dict[str, List[Dict[str, Any]]] = {}
 _FALLBACK_FAVORITES: Dict[str, set] = {}
-_FALLBACK_TICKETS: Dict[str, Dict[str, Any]] = {}
 
 
 def _find_catalog_item(sku_or_variant: str) -> Optional[Dict[str, Any]]:
@@ -147,13 +142,36 @@ async def _call_nestjs_tool(
             resp = await client.post(url, json=payload, headers=headers)
             if resp.status_code in (200, 201):
                 body = resp.json()
+                if isinstance(body, dict) and (body.get("status") in ("error", "failed") or body.get("success") is False):
+                    return None
                 if isinstance(body, dict) and "data" in body:
                     return body["data"]
                 return body
     except Exception as exc:
         _NESTJS_OFFLINE_UNTIL = time.time() + 15.0
-        logger.debug("NestJS Internal Gateway [%s] unavailable (%s), using local baseline.", endpoint, exc)
+        logger.debug("NestJS Internal Gateway [%s] unavailable (%s).", endpoint, exc)
     return None
+
+
+async def _require_commerce_result(endpoint: str, payload: Dict[str, Any], ctx: ToolContext,
+                                   required_keys: tuple[str, ...], side_effect: bool = False) -> Dict[str, Any]:
+    """Never invent a result when the trusted backend cannot confirm it."""
+    result = await _call_nestjs_tool(endpoint, payload, ctx)
+    if (not isinstance(result, dict) or not result or result.get("status") in ("error", "failed") or result.get("success") is False
+            or any(key not in result or result[key] is None for key in required_keys)):
+        detail = "Không thể xác nhận kết quả thao tác; hãy kiểm tra trạng thái trước khi thử lại." if side_effect else "Không thể xác minh dữ liệu từ hệ thống nghiệp vụ."
+        raise ToolUnavailableError(detail)
+    return result
+
+
+def _without_inventory(value: Any) -> Any:
+    """Catalog fallback cannot establish live inventory availability."""
+    inventory_keys = {"stock_available", "in_stock", "inStock", "available_qty", "availableQty", "stock"}
+    if isinstance(value, dict):
+        return {k: _without_inventory(v) for k, v in value.items() if k not in inventory_keys}
+    if isinstance(value, list):
+        return [_without_inventory(v) for v in value]
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +364,7 @@ async def lookup_laptop_catalog(args: LaptopCatalogInput, ctx: ToolContext) -> D
             "status": "success",
             "source": "nestjs_commerce_ssot",
             "total_matched": len(laptops),
-            "items": laptops,
+            "items": _without_inventory(laptops),
         }
 
     matched: List[Dict[str, Any]] = []
@@ -374,7 +392,6 @@ async def lookup_laptop_catalog(args: LaptopCatalogInput, ctx: ToolContext) -> D
             "ssd_gb": item["ssd_gb"],
             "display": item["display"],
             "price_vnd": str(item["price_vnd"]),
-            "stock_available": item["stock_available"],
             "warranty_months": item["warranty_months"],
         })
 
@@ -409,7 +426,7 @@ async def get_product_details(args: ProductDetailsInput, ctx: ToolContext) -> Di
     target_sku = item.get("aliases", [item["sku"]])[0] if item else args.sku
     live_data = await _call_nestjs_tool("get_product_details", {"sku": target_sku, "variant_id": target_sku}, ctx)
     if live_data:
-        return {"status": "success", "source": "nestjs_commerce_ssot", "product": live_data}
+        return {"status": "success", "source": "nestjs_commerce_ssot", "product": _without_inventory(live_data)}
 
     item = _find_catalog_item(args.sku)
     if not item:
@@ -431,7 +448,6 @@ async def get_product_details(args: ProductDetailsInput, ctx: ToolContext) -> Di
             "ssd_gb": item["ssd_gb"],
             "display": item["display"],
             "price_vnd": str(item["price_vnd"]),
-            "stock_available": item["stock_available"],
             "warranty_months": item["warranty_months"],
         },
     }
@@ -464,7 +480,7 @@ async def compare_products(args: CompareProductsInput, ctx: ToolContext) -> Dict
             "status": "success",
             "source": "nestjs_commerce_ssot",
             "total": live_data.get("total", len(live_data["comparison"])),
-            "comparison": live_data["comparison"],
+            "comparison": _without_inventory(live_data["comparison"]),
         }
 
     compared: List[Dict[str, Any]] = []
@@ -480,7 +496,6 @@ async def compare_products(args: CompareProductsInput, ctx: ToolContext) -> Dict
                 "ssd_gb": item["ssd_gb"],
                 "display": item["display"],
                 "price_vnd": str(item["price_vnd"]),
-                "stock_available": item["stock_available"],
             })
 
     return {
@@ -515,33 +530,11 @@ class CheckInventoryInput(BaseModel):
 )
 async def check_inventory(args: CheckInventoryInput, ctx: ToolContext) -> Dict[str, Any]:
     item = _find_catalog_item(args.sku)
-    target_sku = item.get("aliases", [item["sku"]])[0] if item else args.sku
-    live_data = await _call_nestjs_tool(
-        "check_inventory",
-        {"sku": target_sku, "variant_id": target_sku, "store_id": args.store_id},
-        ctx,
-    )
-    if live_data and "available_qty" in live_data:
-        return {"status": "success", "source": "nestjs_commerce_ssot", **live_data}
-
-    item = _find_catalog_item(args.sku)
-    store_key = (args.store_id or "MWG_HCM_001").strip().upper()
-    store = STORE_BRANCHES.get(store_key, STORE_BRANCHES["MWG_HCM_001"])
-    avail = item["stock_available"] if item else 0
-
-    return {
-        "status": "success",
-        "sku": item["sku"] if item else args.sku,
-        "store_code": store["store_code"],
-        "store_name": store["store_name"],
-        "address": store["address"],
-        "on_hand_qty": avail + 2 if avail > 0 else 0,
-        "reserved_qty": 2 if avail > 0 else 0,
-        "available_qty": avail,
-        "is_in_stock": avail > 0,
-        "reservation_guarantee": "Khóa bi quan SELECT ... FOR UPDATE chống bán vượt tồn (Anti-Oversell).",
-    }
-
+    target = item.get("aliases", [item["sku"]])[0] if item else args.sku
+    data = await _require_commerce_result("check_inventory", {"sku": target, "variant_id": target, "store_id": args.store_id}, ctx, ("available_qty",))
+    if not isinstance(data["available_qty"], int) or isinstance(data["available_qty"], bool) or data["available_qty"] < 0:
+        raise ToolUnavailableError("Không thể xác minh dữ liệu tồn kho.")
+    return {**data, "status": "success", "source": "nestjs_commerce_ssot"}
 
 # ---------------------------------------------------------------------------
 # TOOL 5: Search Knowledge (Hybrid RAG Engine + NestJS Policy SSOT)
@@ -611,21 +604,10 @@ class ViewCartInput(BaseModel):
     timeout_s=5.0,
 )
 async def view_cart(args: ViewCartInput, ctx: ToolContext) -> Dict[str, Any]:
-    live_data = await _call_nestjs_tool("view_cart", {}, ctx)
-    if live_data and "subtotal_vnd" in live_data:
-        return {"status": "success", "source": "nestjs_commerce_ssot", **live_data}
-
-    cust_id = getattr(ctx.principal, "user_id", "customer_default") if ctx and ctx.principal else "customer_default"
-    items = _FALLBACK_CARTS.get(cust_id, [])
-    subtotal = sum((Decimal(str(it["unit_price_vnd"])) * int(it["quantity"]) for it in items), Decimal("0"))
-    return {
-        "status": "success",
-        "customer_id": cust_id,
-        "total_items": sum(int(it["quantity"]) for it in items),
-        "subtotal_vnd": str(subtotal),
-        "items": items,
-    }
-
+    data = await _require_commerce_result("view_cart", {}, ctx, ("subtotal_vnd", "items"))
+    if not isinstance(data["items"], list):
+        raise ToolUnavailableError("Không thể xác minh dữ liệu giỏ hàng.")
+    return {**data, "status": "success", "source": "nestjs_commerce_ssot"}
 
 # ---------------------------------------------------------------------------
 # TOOL 7: Add To Cart (add_to_cart)
@@ -653,64 +635,12 @@ class AddToCartInput(BaseModel):
     timeout_s=5.0,
 )
 async def add_to_cart(args: AddToCartInput, ctx: ToolContext) -> Dict[str, Any]:
-    cust_id = getattr(ctx.principal, "user_id", "customer_default") if ctx and ctx.principal else "customer_default"
     item = _find_catalog_item(args.sku)
-    target_sku = item.get("aliases", [item["sku"]])[0] if item else args.sku
-    live_data = await _call_nestjs_tool(
-        "add_to_cart",
-        {"sku": target_sku, "variant_id": target_sku, "quantity": args.quantity},
-        ctx,
-    )
-
-    # Maintain local cart cache in sync
-    if item:
-        cart = _FALLBACK_CARTS.setdefault(cust_id, [])
-        existing = next((x for x in cart if x["sku"] == item["sku"]), None)
-        if existing:
-            existing["quantity"] += args.quantity
-        else:
-            cart.append({
-                "sku": item["sku"],
-                "name": item["name"],
-                "quantity": args.quantity,
-                "unit_price_vnd": str(item["price_vnd"]),
-            })
-
-    if live_data and live_data.get("status") == "success":
-        return {"source": "nestjs_commerce_ssot", **live_data}
-
-    item = _find_catalog_item(args.sku)
-    if not item:
-        return {
-            "status": "error",
-            "message": f"Sản phẩm '{args.sku}' không tồn tại trong danh mục SSOT.",
-        }
-
-    cust_id = getattr(ctx.principal, "user_id", "customer_default") if ctx and ctx.principal else "customer_default"
-    cart = _FALLBACK_CARTS.setdefault(cust_id, [])
-    existing = next((x for x in cart if x["sku"] == item["sku"]), None)
-    if existing:
-        existing["quantity"] += args.quantity
-    else:
-        cart.append({
-            "sku": item["sku"],
-            "name": item["name"],
-            "quantity": args.quantity,
-            "unit_price_vnd": str(item["price_vnd"]),
-        })
-
-    subtotal = sum((Decimal(str(it["unit_price_vnd"])) * int(it["quantity"]) for it in cart), Decimal("0"))
-    return {
-        "status": "success",
-        "message": f"Đã thêm {args.quantity} sản phẩm [{item['name']}] vào giỏ hàng.",
-        "cart": {
-            "customer_id": cust_id,
-            "total_items": sum(int(it["quantity"]) for it in cart),
-            "subtotal_vnd": str(subtotal),
-            "items": cart,
-        },
-    }
-
+    target = item.get("aliases", [item["sku"]])[0] if item else args.sku
+    data = await _require_commerce_result("add_to_cart", {"sku": target, "variant_id": target, "quantity": args.quantity}, ctx, ("status", "cart"), side_effect=True)
+    if data["status"] != "success" or not isinstance(data["cart"], dict):
+        raise ToolUnavailableError("Không thể xác nhận kết quả thao tác; hãy kiểm tra trạng thái trước khi thử lại.")
+    return {**data, "source": "nestjs_commerce_ssot"}
 
 # ---------------------------------------------------------------------------
 # TOOL 8: Remove From Cart (remove_from_cart)
@@ -733,34 +663,11 @@ class RemoveFromCartInput(BaseModel):
 )
 async def remove_from_cart(args: RemoveFromCartInput, ctx: ToolContext) -> Dict[str, Any]:
     item = _find_catalog_item(args.sku)
-    target_sku = item.get("aliases", [item["sku"]])[0] if item else args.sku
-    live_data = await _call_nestjs_tool(
-        "remove_from_cart",
-        {"sku": target_sku, "variant_id": target_sku},
-        ctx,
-    )
-    if live_data and live_data.get("status") == "success":
-        return {"source": "nestjs_commerce_ssot", **live_data}
-
-    cust_id = getattr(ctx.principal, "user_id", "customer_default") if ctx and ctx.principal else "customer_default"
-    item = _find_catalog_item(args.sku)
-    target_sku = item["sku"] if item else args.sku
-    cart = _FALLBACK_CARTS.get(cust_id, [])
-    updated = [x for x in cart if x["sku"].upper() != target_sku.upper()]
-    _FALLBACK_CARTS[cust_id] = updated
-
-    subtotal = sum((Decimal(str(it["unit_price_vnd"])) * int(it["quantity"]) for it in updated), Decimal("0"))
-    return {
-        "status": "success",
-        "message": f"Đã xóa sản phẩm {target_sku} khỏi giỏ hàng.",
-        "cart": {
-            "customer_id": cust_id,
-            "total_items": sum(int(it["quantity"]) for it in updated),
-            "subtotal_vnd": str(subtotal),
-            "items": updated,
-        },
-    }
-
+    target = item.get("aliases", [item["sku"]])[0] if item else args.sku
+    data = await _require_commerce_result("remove_from_cart", {"sku": target, "variant_id": target}, ctx, ("status", "cart"), side_effect=True)
+    if data["status"] != "success" or not isinstance(data["cart"], dict):
+        raise ToolUnavailableError("Không thể xác nhận kết quả thao tác; hãy kiểm tra trạng thái trước khi thử lại.")
+    return {**data, "source": "nestjs_commerce_ssot"}
 
 # ---------------------------------------------------------------------------
 # TOOL 9: Preview Order & Signed Preview Token (preview_order)
@@ -795,99 +702,11 @@ class PreviewOrderInput(BaseModel):
     timeout_s=5.0,
 )
 async def preview_order(args: PreviewOrderInput, ctx: ToolContext) -> Dict[str, Any]:
-    cust_id = getattr(ctx.principal, "user_id", "customer_default") if ctx and ctx.principal else "customer_default"
-    cart_items = _FALLBACK_CARTS.get(cust_id, [])
-    items_payload = (
-        [{"sku": it.get("aliases", [it["sku"]])[0] if _find_catalog_item(it["sku"]) else it["sku"], "quantity": int(it["quantity"])} for it in cart_items]
-        if cart_items and not args.sku
-        else None
-    )
-    live_data = await _call_nestjs_tool(
-        "preview_order",
-        {
-            "sku": args.sku,
-            "quantity": args.quantity,
-            "items": items_payload,
-            "store_id": args.store_id,
-            "discount_code": args.discount_code,
-        },
-        ctx,
-    )
-    if live_data and ("previewToken" in live_data or "preview_token" in live_data or "totalVnd" in live_data):
-        return {"status": "success", "source": "nestjs_commerce_ssot", **live_data}
-
-    cust_id = getattr(ctx.principal, "user_id", "customer_default") if ctx and ctx.principal else "customer_default"
-    items_to_calc: List[Dict[str, Any]] = []
-
-    if args.sku:
-        item = _find_catalog_item(args.sku)
-        if not item:
-            return {"status": "error", "message": f"Không tìm thấy sản phẩm '{args.sku}' để tính đơn hàng."}
-        items_to_calc.append({
-            "sku": item["sku"],
-            "name": item["name"],
-            "quantity": args.quantity,
-            "unit_price_vnd": item["price_vnd"],
-        })
-    else:
-        cart = _FALLBACK_CARTS.get(cust_id, [])
-        if cart:
-            for c in cart:
-                items_to_calc.append({
-                    "sku": c["sku"],
-                    "name": c["name"],
-                    "quantity": int(c["quantity"]),
-                    "unit_price_vnd": Decimal(str(c["unit_price_vnd"])),
-                })
-        else:
-            default_item = LAPTOP_CATALOG[0]
-            items_to_calc.append({
-                "sku": default_item["sku"],
-                "name": default_item["name"],
-                "quantity": args.quantity,
-                "unit_price_vnd": default_item["price_vnd"],
-            })
-
-    subtotal = sum((it["unit_price_vnd"] * Decimal(str(it["quantity"])) for it in items_to_calc), Decimal("0"))
-    discount = Decimal("0")
-    if args.discount_code:
-        code = args.discount_code.strip().upper()
-        if code == "MWG500K":
-            discount = Decimal("500000")
-        elif code == "SINHVIEN5":
-            discount = (subtotal * Decimal("0.05")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-
-    total_vnd = max(Decimal("0"), subtotal - discount)
-    expires_at = int(time.time()) + 600
-    token_payload = f"{cust_id}:{args.store_id}:{total_vnd}:{expires_at}"
-    signature = hmac.new(
-        PREVIEW_TOKEN_SECRET.encode("utf-8"),
-        token_payload.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-    preview_token = f"prv_{expires_at}_{signature[:32]}"
-
-    return {
-        "status": "success",
-        "customer_id": cust_id,
-        "store_id": args.store_id,
-        "subtotal_vnd": str(subtotal),
-        "discount_vnd": str(discount),
-        "total_vnd": str(total_vnd),
-        "preview_token": preview_token,
-        "expires_in_seconds": 600,
-        "items": [
-            {
-                "sku": it["sku"],
-                "name": it["name"],
-                "quantity": it["quantity"],
-                "unit_price_vnd": str(it["unit_price_vnd"]),
-            }
-            for it in items_to_calc
-        ],
-        "notice": "Vui lòng bấm nút Xác nhận Đặt hàng trên giao diện Web trong vòng 10 phút để hoàn tất giao dịch.",
-    }
-
+    # The backend, not a local cart or a fabricated token, owns this calculation.
+    data = await _require_commerce_result("preview_order", {"sku": args.sku, "quantity": args.quantity, "store_id": args.store_id, "discount_code": args.discount_code}, ctx, ())
+    if not (data.get("previewToken") or data.get("preview_token")) or not ("totalVnd" in data or "total_vnd" in data):
+        raise ToolUnavailableError("Không thể xác minh bản xem trước đơn hàng.")
+    return {**data, "status": "success", "source": "nestjs_commerce_ssot"}
 
 # ---------------------------------------------------------------------------
 # TOOL 10: Query Order Status (query_order_status)
@@ -909,45 +728,10 @@ class OrderStatusInput(BaseModel):
     timeout_s=5.0,
 )
 async def query_order_status(args: OrderStatusInput, ctx: ToolContext) -> Dict[str, Any]:
-    """Looks up customer order details from SSOT commerce engine with fallback."""
-    live_data = await _call_nestjs_tool(
-        "get_order_status",
-        {"order_id": args.order_id, "order_no": args.order_id},
-        ctx,
-    )
-    if live_data and live_data.get("order_status"):
-        return {
-            "status": "success",
-            "source": "nestjs_commerce_ssot",
-            "order_id": live_data.get("order_id", args.order_id),
-            "order_status": live_data.get("order_status", "DELIVERED"),
-            "delivered_date": live_data.get("delivered_date", "2026-10-20"),
-            "days_since_delivery": live_data.get("days_since_delivery", 6),
-            "eligible_for_return": True,
-            "items": live_data.get("items", []),
-            "store_id": live_data.get("store_id", "STORE_HCM_001"),
-        }
-
-    return {
-        "status": "success",
-        "order_id": args.order_id,
-        "order_status": "DELIVERED",
-        "delivered_date": "2026-10-20",
-        "days_since_delivery": 6,
-        "eligible_for_return": True,
-        "items": [
-            {
-                "sku": "LAP-ASUS-VIVO15",
-                "name": "Laptop Asus Vivobook 15 OLED A1505VA",
-                "quantity": 1,
-                "unit_price_vnd": "17990000",
-                "total_vnd": "17990000",
-            }
-        ],
-        "store_id": "STORE_HCM_001",
-        "customer_phone_masked": "0909***888",
-    }
-
+    data = await _require_commerce_result("get_order_status", {"order_id": args.order_id, "order_no": args.order_id}, ctx, ("order_id", "order_status"))
+    if data["order_id"] != args.order_id or not isinstance(data["order_status"], str) or not data["order_status"]:
+        raise ToolUnavailableError("Không thể xác minh trạng thái đơn hàng.")
+    return {**data, "status": "success", "source": "nestjs_commerce_ssot"}
 
 # ---------------------------------------------------------------------------
 # TOOL 11: Cancel Simulated Order (cancel_simulated_order)
@@ -974,24 +758,10 @@ class CancelOrderInput(BaseModel):
     timeout_s=5.0,
 )
 async def cancel_simulated_order(args: CancelOrderInput, ctx: ToolContext) -> Dict[str, Any]:
-    live_data = await _call_nestjs_tool(
-        "cancel_simulated_order",
-        {"order_id": args.order_id, "reason": args.reason},
-        ctx,
-    )
-    if live_data and live_data.get("status") == "success":
-        return {"source": "nestjs_commerce_ssot", **live_data}
-
-    return {
-        "status": "success",
-        "order_id": args.order_id,
-        "action": "CANCELLED",
-        "reason": args.reason,
-        "inventory_restored": True,
-        "idempotency_key": ctx.idempotency_key,
-        "message": f"Đơn hàng {args.order_id} đã được hủy và hoàn trả tồn kho khả dụng thành công.",
-    }
-
+    data = await _require_commerce_result("cancel_simulated_order", {"order_id": args.order_id, "reason": args.reason}, ctx, ("status", "order_id"), side_effect=True)
+    if data["status"] != "success" or data["order_id"] != args.order_id:
+        raise ToolUnavailableError("Không thể xác nhận kết quả hủy đơn; hãy kiểm tra trạng thái trước khi thử lại.")
+    return {**data, "source": "nestjs_commerce_ssot"}
 
 # ---------------------------------------------------------------------------
 # TOOL 12: Create Support Ticket (create_support_ticket)
@@ -1024,32 +794,10 @@ class CreateSupportTicketInput(BaseModel):
     timeout_s=5.0,
 )
 async def create_support_ticket(args: CreateSupportTicketInput, ctx: ToolContext) -> Dict[str, Any]:
-    live_data = await _call_nestjs_tool(
-        "create_support_ticket",
-        {"order_id": args.order_id, "title": args.title, "description": args.description},
-        ctx,
-    )
-    if live_data and live_data.get("status") == "success":
-        return {"source": "nestjs_commerce_ssot", **live_data}
-
-    cust_id = getattr(ctx.principal, "user_id", "customer_default") if ctx and ctx.principal else "customer_default"
-    ticket_id = f"TCK-{abs(hash(ctx.idempotency_key or args.title)) % 900000 + 100000}"
-    record = {
-        "ticket_id": ticket_id,
-        "customer_id": cust_id,
-        "order_id": args.order_id or "N/A",
-        "title": args.title,
-        "description": args.description,
-        "status": "OPEN",
-    }
-    _FALLBACK_TICKETS[ticket_id] = record
-    return {
-        "status": "success",
-        "ticket_id": ticket_id,
-        "ticket": record,
-        "message": f"Phiếu hỗ trợ {ticket_id} đã được tạo thành công và chuyển đến bộ phận CSKH MWG.",
-    }
-
+    data = await _require_commerce_result("create_support_ticket", {"order_id": args.order_id, "title": args.title, "description": args.description}, ctx, ("status", "ticket_id"), side_effect=True)
+    if data["status"] != "success" or not isinstance(data["ticket_id"], str) or not data["ticket_id"]:
+        raise ToolUnavailableError("Không thể xác nhận tạo phiếu; hãy kiểm tra trạng thái trước khi thử lại.")
+    return {**data, "source": "nestjs_commerce_ssot"}
 
 # ---------------------------------------------------------------------------
 # TOOL 13: Manage Favorite (manage_favorite)
@@ -1209,13 +957,5 @@ class ReturnRefundInput(BaseModel):
     timeout_s=8.0,
 )
 async def request_return_or_refund(args: ReturnRefundInput, ctx: ToolContext) -> Dict[str, Any]:
-    """Processes customer refund request governed by strict financial tier policies."""
-    return {
-        "status": "processed",
-        "order_id": args.order_id,
-        "amount_vnd": str(args.amount),
-        "customer_name": args.customer_name,
-        "reason": args.reason,
-        "idempotency_key": ctx.idempotency_key,
-        "message": f"Yêu cầu bồi hoàn {args.amount} VNĐ cho đơn hàng {args.order_id} đã được thực thi thành công.",
-    }
+    # No trusted refund operation exists in core-api yet. Never report it processed.
+    raise ToolUnavailableError("Chưa có dịch vụ xác nhận yêu cầu đổi trả hoặc bồi hoàn.")

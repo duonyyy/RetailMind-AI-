@@ -5,6 +5,7 @@ from agent_platform.agents.base import BaseAgent
 from agent_platform.domain.pack import DomainPack
 from agent_platform.llm.base import LLMPort
 from agent_platform.harness.tools.registry import ToolRegistry
+from agent_platform.harness.memory.short_term import ShortTermMemory
 
 if TYPE_CHECKING:
     from agent_platform.harness.state.contracts import AgentState
@@ -63,13 +64,49 @@ class EnterpriseAgent(BaseAgent):
                 "pending_tool_calls": [],
             }
 
-        # 2. Format system prompt with reflection feedback from Critic
+        # 2. Format system prompt with memory context and reflection feedback from Critic
         sys_prompt = self.pack.get_system_prompt()
+        if mem_ctx := state.get("memory_context"):
+            sys_prompt += f"\n\n[BỐI CẢNH BỘ NHỚ DOANH NGHIỆP]:\n{mem_ctx}"
         if feedback := state.get("critic_feedback"):
             sys_prompt += f"\n\n[LƯU Ý TỪ GIÁM SÁT VIÊN Ở CHU KỲ TRƯỚC]: {feedback}"
 
         llm_messages: List[Dict[str, Any]] = [{"role": "system", "content": sys_prompt}]
-        for m in messages:
+
+        # Context Compression: If message history exceeds working threshold,
+        # compact older turns to protect context budget and attention quality
+        if len(messages) > 6:
+            cut_idx = len(messages) - 4
+            while cut_idx > 0 and isinstance(messages[cut_idx], ToolMessage):
+                cut_idx -= 1
+
+            old_msgs = messages[:cut_idx]
+            recent_msgs = messages[cut_idx:]
+
+            if old_msgs:
+                stm = ShortTermMemory(strategy="summary", max_recent_messages=4)
+                for m in old_msgs:
+                    r = "user" if isinstance(m, HumanMessage) else ("assistant" if isinstance(m, AIMessage) else "tool")
+                    c = m.content if isinstance(m.content, str) else str(m.content)
+                    stm.add(role=r, content=c)
+                stm.compact()
+                summary_block = stm.render()
+
+                llm_messages.append({
+                    "role": "user",
+                    "content": f"[TÓM TẮT TIẾN TRÌNH HỘI THOẠI TRƯỚC ĐÓ]:\n{summary_block}",
+                })
+                llm_messages.append({
+                    "role": "assistant",
+                    "content": "Tôi đã ghi nhận tóm tắt bối cảnh và các ràng buộc trên. Tôi sẵn sàng xử lý tiếp.",
+                })
+                active_messages = recent_msgs
+            else:
+                active_messages = messages
+        else:
+            active_messages = messages
+
+        for m in active_messages:
             if isinstance(m, HumanMessage):
                 llm_messages.append({"role": "user", "content": m.content})
             elif isinstance(m, AIMessage):

@@ -21,6 +21,7 @@ def create_tool_exec_node(executor: ToolExecutor):
         events: List[ToolEvent] = []
         new_evidence: List[Evidence] = []
         awaiting_approval = False
+        unavailable_message = None
 
         for tc in pending_calls:
             t_start = time.time()
@@ -58,6 +59,10 @@ def create_tool_exec_node(executor: ToolExecutor):
                 execution_time_ms=duration_ms,
             ))
 
+            if result.error_code in ("unavailable", "timeout"):
+                unavailable_message = str(result.output)
+                break
+
             # Extract evidence if read-only lookup or knowledge retrieval
             spec = executor.registry.get(tool_name)
             is_lookup = (spec and not spec.side_effect) or tool_name == "search_knowledge"
@@ -76,7 +81,10 @@ def create_tool_exec_node(executor: ToolExecutor):
             "evidence": new_evidence,
         }
 
-        if awaiting_approval:
+        if unavailable_message:
+            updates["status"] = "abstained"
+            updates["final_answer"] = unavailable_message
+        elif awaiting_approval:
             updates["status"] = "awaiting_approval"
 
         return updates

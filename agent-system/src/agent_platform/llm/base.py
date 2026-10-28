@@ -8,6 +8,7 @@ class ToolCall(BaseModel):
 
 class Usage(BaseModel):
     prompt_tokens: int = 0
+    cached_prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
 

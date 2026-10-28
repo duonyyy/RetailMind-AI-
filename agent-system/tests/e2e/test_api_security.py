@@ -1,5 +1,6 @@
 from pathlib import Path
 import pytest
+import httpx
 from fastapi.testclient import TestClient
 from agent_platform.config.loader import load_settings
 from agent_platform.domain.pack import DomainPack
@@ -10,20 +11,26 @@ def setup_client() -> TestClient:
     domain_dir = Path(__file__).parents[2] / "domains" / "retail_store"
     pack = DomainPack.load_from_dir(domain_dir)
     app = create_app(settings=settings, pack=pack)
+    def identity(request):
+        identities = {"Bearer test-customer": ("alice", "CUSTOMER"), "Bearer test-admin": ("boss", "ADMIN")}
+        profile = identities.get(request.headers.get("authorization"))
+        if not profile:
+            return httpx.Response(401)
+        return httpx.Response(200, json={"data": {"id": profile[0], "role": profile[1]}})
+    app.state.identity_transport = httpx.MockTransport(identity)
     return TestClient(app)
 
-def test_unauthorized_call_returns_401():
+def test_anonymous_chat_uses_guest_role():
     client = setup_client()
     resp = client.post("/v1/chat", json={"query": "Tôi muốn hỏi chính sách"})
-    assert resp.status_code == 401
-    assert "Unauthorized" in resp.json()["detail"]
+    assert resp.status_code == 200
 
 def test_authenticated_chat_returns_200():
     client = setup_client()
     resp = client.post(
         "/v1/chat",
         json={"query": "Thời gian đổi trả là bao lâu?"},
-        headers={"Authorization": "Bearer dev:alice:customer"},
+        headers={"Authorization": "Bearer test-customer"},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -36,7 +43,7 @@ def test_chat_stream_sse_endpoint():
     resp = client.post(
         "/v1/chat/stream",
         json={"query": "Tư vấn sản phẩm"},
-        headers={"Authorization": "Bearer dev:alice:customer"},
+        headers={"Authorization": "Bearer test-customer"},
     )
     assert resp.status_code == 200
     assert "text/event-stream" in resp.headers["content-type"]
@@ -50,7 +57,7 @@ def test_role_enforcement_for_admin_endpoints():
     # Customer role is rejected with 403 Forbidden
     resp_cust = client.get(
         "/v1/approvals",
-        headers={"Authorization": "Bearer dev:alice:customer"},
+        headers={"Authorization": "Bearer test-customer"},
     )
     assert resp_cust.status_code == 403
     assert "Forbidden" in resp_cust.json()["detail"]
@@ -58,7 +65,7 @@ def test_role_enforcement_for_admin_endpoints():
     # Admin role is allowed with 200 OK
     resp_admin = client.get(
         "/v1/approvals",
-        headers={"Authorization": "Bearer dev:boss:admin"},
+        headers={"Authorization": "Bearer test-admin"},
     )
     assert resp_admin.status_code == 200
     assert isinstance(resp_admin.json(), list)

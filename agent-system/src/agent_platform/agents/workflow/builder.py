@@ -56,7 +56,9 @@ def build_orchestration_graph(
     builder.add_conditional_edges("agent", route_after_agent)
 
     # 5. Conditional routing from tool_exec
-    def route_after_tool_exec(state: AgentState) -> Literal["agent", END]:
+    def route_after_tool_exec(state: AgentState) -> Literal["agent", "abstain", END]:
+        if state.get("status") == "abstained":
+            return "abstain"
         if state.get("status") == "awaiting_approval":
             return END
         return "agent"

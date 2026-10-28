@@ -181,3 +181,53 @@ def test_enterprise_agent_critic_feedback_injection():
         assert critic_warning in system_msg["content"]
 
     asyncio.run(_run())
+
+def test_enterprise_agent_context_compression_triggers_on_long_dialogue():
+    async def _run():
+        pack, tools, llm, agent = setup_agent_fixtures()
+        llm.queue_answer("Tôi đã ghi nhận và tiếp tục hỗ trợ bạn.")
+
+        principal = Principal(user_id="u_long", role="customer")
+        # Construct 8 turns exceeding the 6 threshold
+        messages = [
+            HumanMessage(content="Turn 1: Khách hàng tìm Laptop LAP-DELL-01 ngân sách 20 triệu"),
+            HumanMessage(content="Turn 2: Hỏi thêm bảo hành"),
+            HumanMessage(content="Turn 3: Hỏi về phương thức thanh toán"),
+            HumanMessage(content="Turn 4: Hỏi về thời gian giao hàng"),
+            HumanMessage(content="Turn 5: Yêu cầu giao trước 17h bắt buộc"),
+            HumanMessage(content="Turn 6: Đổi địa chỉ nhận"),
+            HumanMessage(content="Turn 7: Xác nhận đơn"),
+            HumanMessage(content="Turn 8: Câu hỏi mới nhất"),
+        ]
+        state: AgentState = {
+            "thread_id": "t_long",
+            "run_id": "r_long",
+            "principal": principal,
+            "domain": pack.name,
+            "prompt_version": "1.0",
+            "messages": messages,
+            "step_count": 1,
+            "critic_cycles": 0,
+            "critic_feedback": None,
+            "evidence": [],
+            "tool_events": [],
+            "pending_tool_calls": [],
+            "final_answer": None,
+            "grounding_score": None,
+            "status": "running",
+        }
+
+        updates = await agent(state)
+        assert updates["final_answer"] == "Tôi đã ghi nhận và tiếp tục hỗ trợ bạn."
+
+        # Verify compression summary was injected into llm_messages
+        last_call_messages = llm.history_calls[-1]
+        summary_msg = next((m for m in last_call_messages if "[TÓM TẮT TIẾN TRÌNH HỘI THOẠI TRƯỚC ĐÓ]" in m["content"]), None)
+        assert summary_msg is not None
+        # Verify durable notes extracted SKU and constraints from older turns
+        assert "LAP-DELL-01" in summary_msg["content"] or "ngân sách" in summary_msg["content"]
+        # Verify the most recent turn is preserved
+        assert any("Turn 8: Câu hỏi mới nhất" in m.get("content", "") for m in last_call_messages)
+
+    asyncio.run(_run())
+
