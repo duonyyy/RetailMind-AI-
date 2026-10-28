@@ -46,12 +46,16 @@ async function catchAll(
     'x-correlation-id',
     'idempotency-key',
     'x-idempotency-key',
-    'x-customer-id',
   ];
   whitelist.forEach((headerName) => {
     const val = req.headers.get(headerName);
     if (val) forwardedHeaders.set(headerName, val);
   });
+
+  const refreshCookie = cookieStore.get('refresh_token')?.value;
+  if ((path === 'auth/refresh' || path === 'auth/logout') && refreshCookie) forwardedHeaders.set('Cookie', `refresh_token=${encodeURIComponent(refreshCookie)}`);
+  const guestCookie = cookieStore.get('retailmind_guest')?.value;
+  if (isAgentRoute && guestCookie && !token) forwardedHeaders.set('Cookie', `retailmind_guest=${encodeURIComponent(guestCookie)}`);
 
   // 3. Attach Bearer Token from HttpOnly Server Cookie
   if (token) {

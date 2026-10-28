@@ -46,23 +46,21 @@ export default function LoginPage() {
         body: JSON.stringify({
           email: identifier.trim(),
           password,
-          role: selectedRole === 'admin' ? 'ADMIN' : 'CUSTOMER',
         }),
       });
 
-      if (res.ok) {
-        setSuccessMsg('Xác thực Argon2id & cấp HttpOnly Cookie thành công!');
-      } else {
-        setSuccessMsg('Đã khởi tạo phiên đăng nhập an toàn (Simulated Session Cookie).');
+      if (!res.ok) {
+        setErrorMsg('Đăng nhập thất bại. Vui lòng kiểm tra thông tin và thử lại.');
+        return;
       }
+      const body = await res.json();
+      const role = String(body?.data?.user?.role || '').toLowerCase();
+      setSuccessMsg('Đăng nhập thành công.');
+      router.push(role === 'admin' ? '/admin/dashboard' : '/');
     } catch {
-      setSuccessMsg('Đã khởi tạo phiên đăng nhập an toàn (HttpOnly Session Active).');
+      setErrorMsg('Không thể kết nối dịch vụ đăng nhập.');
     } finally {
-      document.cookie = `retailmind_role=${selectedRole}; path=/; max-age=86400; SameSite=Lax`;
       setIsLoading(false);
-      setTimeout(() => {
-        router.push(selectedRole === 'admin' ? '/admin/dashboard' : '/');
-      }, 600);
     }
   };
 

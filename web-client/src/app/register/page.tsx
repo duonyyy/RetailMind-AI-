@@ -24,22 +24,25 @@ export default function RegisterPage() {
   const [consentPii, setConsentPii] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [registered, setRegistered] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setError(null);
     try {
-      await fetch('/api/proxy/auth/register', {
+      const response = await fetch('/api/proxy/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fullName, email, phone, password }),
       });
-    } catch {
-      // Fallback
-    } finally {
-      setIsSubmitting(false);
+      if (!response.ok) throw new Error('Không thể tạo tài khoản. Vui lòng kiểm tra thông tin và thử lại.');
       setRegistered(true);
       setTimeout(() => router.push('/login'), 1200);
+    } catch {
+      setError('Không thể tạo tài khoản. Vui lòng kiểm tra thông tin và thử lại.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -65,6 +68,7 @@ export default function RegisterPage() {
           </p>
         </div>
 
+        {error && <p role="alert" className="text-red-700">{error}</p>}
         {registered ? (
           <div className="ts-badge-success p-4 rounded-xl text-xs font-semibold text-center space-y-2">
             <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />

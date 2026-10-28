@@ -74,19 +74,21 @@ services:
       - PORT=4000
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_USERNAME=retailmind_user
-      - DB_PASSWORD=secure_password_change_me
+      - DB_USERNAME=${DB_APP_USER:?DB_APP_USER is required}
+      - DB_PASSWORD=${DB_APP_PASSWORD:?DB_APP_PASSWORD is required}
       - DB_DATABASE=retailmind_db
       - ENABLE_POSTGRES=true
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - AUTH_REFRESH_ENABLED=${AUTH_REFRESH_ENABLED:-false}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - MINIO_ENDPOINT=minio
       - MINIO_PORT=9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
       - MINIO_BUCKET=retailmind-documents
       - AGENT_SERVICE_URL=http://agent:8000
-      - INTERNAL_TOOL_SECRET=secret_token_internal_retailmind
+      - INTERNAL_TOOL_SECRET=${INTERNAL_TOOL_SECRET:?INTERNAL_TOOL_SECRET is required}
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,7 +108,8 @@ services:
       - PORT=8000
       - QDRANT_URL=http://qdrant:6333
       - NESTJS_BACKEND_URL=http://backend:4000
-      - INTERNAL_TOOL_SECRET=secret_token_internal_retailmind
+      - CORE_API_URL=http://backend:4000
+      - INTERNAL_TOOL_SECRET=${INTERNAL_TOOL_SECRET:?INTERNAL_TOOL_SECRET is required}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-mock_key}
       # - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006/v1/traces
     depends_on:
@@ -135,6 +138,8 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:4000
       - NEXT_PUBLIC_AGENT_STREAM_URL=http://localhost:4000/api/v1/conversations
+      - BACKEND_INTERNAL_URL=http://backend:4000
+      - AGENT_INTERNAL_URL=http://agent:8000
     depends_on:
       - backend
 

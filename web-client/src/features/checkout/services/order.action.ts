@@ -20,46 +20,6 @@ export async function confirmOrderAction(
   payload: ConfirmOrderPayload,
   idempotencyKey: string
 ): Promise<{ success: boolean; data: ConfirmedOrderReceipt }> {
-  const cartItems = payload.items.map((it) => {
-    const matched =
-      BASELINE_LAPTOP_CATALOG.find((l) => l.sku === it.sku) || BASELINE_LAPTOP_CATALOG[0];
-    return {
-      sku: matched.sku,
-      name: matched.name,
-      unitPriceVnd: matched.priceVnd,
-      quantity: it.quantity,
-      stockMax: matched.totalAvailableStock,
-    };
-  });
-
-  const preview = calculateExactOrderPreview(cartItems, payload.discountCode);
-  const orderNo = `MWG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(
-    1000 + Math.random() * 9000
-  )}`;
-
-  try {
-    revalidateTag('inventory');
-    revalidateTag('orders');
-  } catch {
-    // Safe fallback if called outside standard ISR context
-  }
-
-  return {
-    success: true,
-    data: {
-      orderNo,
-      orderId: `ord-${Date.now()}`,
-      status: 'placed',
-      storeId: payload.storeId,
-      storeName: STORE_NAMES[payload.storeId] || STORE_NAMES['store-hcm-q1'],
-      deliveryMode: payload.deliveryMode,
-      paymentMethod: payload.paymentMethod,
-      totalVnd: preview.grandTotalVnd,
-      formattedTotal: preview.formattedGrandTotal,
-      itemsCount: payload.items.reduce((acc, i) => acc + i.quantity, 0),
-      confirmedAt: new Date().toISOString(),
-      idempotencyKey,
-    },
-  };
+  // A fabricated receipt must never be presented as a completed checkout.
+  throw new Error('Chức năng đặt hàng tạm thời chưa khả dụng.');
 }
-

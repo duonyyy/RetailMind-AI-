@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { BrandSectionBackground } from '@/components/patterns';
 import { PreviewTokenCountdown } from '@/features/checkout/components/PreviewTokenCountdown';
 import { calculateExactOrderPreview } from '@/features/checkout/services/preview-token.get';
-import { confirmOrderAction } from '@/features/checkout/services/order.action';
 import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
 import {
   Building2,
@@ -30,6 +29,7 @@ export default function CheckoutPage() {
   const [customerPhone, setCustomerPhone] = useState('0908123883');
   const [deliveryAddress, setDeliveryAddress] = useState('136 Nguyễn Thái Học, Quận 1, TP.HCM');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   const selectedProduct =
     BASELINE_LAPTOP_CATALOG.find((l) => l.sku === selectedSku) || BASELINE_LAPTOP_CATALOG[0];
@@ -51,8 +51,9 @@ export default function CheckoutPage() {
     e.preventDefault();
     if (isSubmitting) return;
     setIsSubmitting(true);
+    setCheckoutError(null);
 
-    const idempotencyKey = `idem-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const idempotencyKey = crypto.randomUUID();
 
     try {
       const res = await fetch('/api/proxy/orders/checkout', {
@@ -68,40 +69,16 @@ export default function CheckoutPage() {
         }),
       });
 
-      if (res.ok) {
-        const json = await res.json();
-        const orderNo = json?.data?.orderNo || `MWG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-8812`;
-        router.push(
-          `/checkout/success?orderNo=${orderNo}&total=${encodeURIComponent(
-            preview.formattedGrandTotal
-          )}&store=${selectedStoreId}&idem=${idempotencyKey}`
-        );
-        return;
-      }
-    } catch {
-      // Fallback to server action
+      if (!res.ok) throw new Error('Không thể đặt hàng. Vui lòng đăng nhập và thử lại.');
+      const json = await res.json();
+      const order = json?.data?.data;
+      if (!order?.orderNo || !order?.formattedTotal) throw new Error('Không nhận được xác nhận đơn hàng hợp lệ.');
+      router.push(`/checkout/success?orderNo=${encodeURIComponent(order.orderNo)}&total=${encodeURIComponent(order.formattedTotal)}&store=${encodeURIComponent(selectedStoreId)}&idem=${idempotencyKey}`);
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : 'Không thể đặt hàng.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const result = await confirmOrderAction(
-      {
-        storeId: selectedStoreId,
-        items: [{ sku: selectedSku, quantity }],
-        discountCode,
-        deliveryMode,
-        paymentMethod,
-        customerName,
-        customerPhone,
-        deliveryAddress,
-      },
-      idempotencyKey
-    );
-
-    setIsSubmitting(false);
-    router.push(
-      `/checkout/success?orderNo=${result.data.orderNo}&total=${encodeURIComponent(
-        result.data.formattedTotal
-      )}&store=${selectedStoreId}&idem=${idempotencyKey}`
-    );
   };
 
   return (
@@ -112,6 +89,7 @@ export default function CheckoutPage() {
       withGlow={true}
       className="min-h-full p-6 sm:p-8 space-y-6"
     >
+      {checkoutError && <p role="alert" className="text-red-700">{checkoutError}</p>}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
