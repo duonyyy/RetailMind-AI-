@@ -6,6 +6,7 @@ from agent_platform.domain.pack import DomainPack
 from agent_platform.llm.base import LLMPort
 from agent_platform.harness.tools.registry import ToolRegistry
 from agent_platform.harness.memory.short_term import ShortTermMemory
+from agent_platform.harness.guards.pii import PIIMasker
 
 if TYPE_CHECKING:
     from agent_platform.harness.state.contracts import AgentState
@@ -121,9 +122,10 @@ class EnterpriseAgent(BaseAgent):
         # 3. Server-side RBAC: only pass schemas allowed for the principal's role
         schemas = self.tool_registry.get_schemas(allowed_for_role=user_role)
 
-        # 4. Invoke LLMPort
+        # 4. Invoke LLMPort with fail-closed PII redaction
+        safe_messages = PIIMasker.mask(llm_messages, fail_closed=True)
         resp = await self.llm.complete(
-            llm_messages,
+            safe_messages,
             tools=schemas if schemas else None,
             temperature=0.0,
         )

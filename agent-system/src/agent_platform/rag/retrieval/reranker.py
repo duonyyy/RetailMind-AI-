@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+from agent_platform.harness.guards.pii import PIIMasker
 
 
 
@@ -446,9 +447,15 @@ class BGERerankerClient(BaseReranker):
         top_k: int = 3
     ) -> List[Dict[str, Any]]:
         try:
+            # Fail-closed PII redaction before remote egress
+            redacted_query = PIIMasker.mask(query, fail_closed=True)
+            redacted_texts = [
+                PIIMasker.mask(doc.get("snippet", doc.get("content", doc.get("text", ""))), fail_closed=True)
+                for doc in documents
+            ]
             payload = {
-                "query": query,
-                "texts": [doc.get("snippet", doc.get("content", doc.get("text", ""))) for doc in documents],
+                "query": redacted_query,
+                "texts": redacted_texts,
                 "truncate": True,
             }
             with httpx.Client(timeout=10.0) as client:
@@ -472,7 +479,7 @@ class BGERerankerClient(BaseReranker):
 
             return output
         except Exception as e:
-            logger.warning("BGE remote endpoint error (%s). Invoking Mock fallback.", e)
+            logger.warning("BGE remote endpoint error (%s). Invoking Mock fallback.", type(e).__name__)
             return self._fallback_mock.rerank(query, documents, top_k)
 
 
@@ -518,13 +525,15 @@ class CohereRerankerClient(BaseReranker):
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
+        # Fail-closed PII redaction before remote egress
+        redacted_query = PIIMasker.mask(query, fail_closed=True)
         docs_text = [
-            doc.get("snippet", doc.get("content", doc.get("text", "")))
+            PIIMasker.mask(doc.get("snippet", doc.get("content", doc.get("text", ""))), fail_closed=True)
             for doc in documents
         ]
         payload = {
             "model": self.model,
-            "query": query,
+            "query": redacted_query,
             "documents": docs_text,
             "top_n": min(top_k, len(documents)),
         }
@@ -551,7 +560,7 @@ class CohereRerankerClient(BaseReranker):
             return output
 
         except Exception as e:
-            logger.warning("Cohere API rerank failed (%s). Invoking Mock fallback.", e)
+            logger.warning("Cohere API rerank failed (%s). Invoking Mock fallback.", type(e).__name__)
             return self._fallback_mock.rerank(query, documents, top_k)
 
     async def arerank(
@@ -571,13 +580,15 @@ class CohereRerankerClient(BaseReranker):
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
+        # Fail-closed PII redaction before remote egress
+        redacted_query = PIIMasker.mask(query, fail_closed=True)
         docs_text = [
-            doc.get("snippet", doc.get("content", doc.get("text", "")))
+            PIIMasker.mask(doc.get("snippet", doc.get("content", doc.get("text", ""))), fail_closed=True)
             for doc in documents
         ]
         payload = {
             "model": self.model,
-            "query": query,
+            "query": redacted_query,
             "documents": docs_text,
             "top_n": min(top_k, len(documents)),
         }
@@ -604,7 +615,7 @@ class CohereRerankerClient(BaseReranker):
             return output
 
         except Exception as e:
-            logger.warning("Cohere async API rerank failed (%s). Invoking Mock fallback.", e)
+            logger.warning("Cohere async API rerank failed (%s). Invoking Mock fallback.", type(e).__name__)
             return self._fallback_mock.rerank(query, documents, top_k)
 
 

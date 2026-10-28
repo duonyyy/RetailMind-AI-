@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from agent_platform.config.settings import PlatformSettings
 from agent_platform.domain.pack import DomainPack
 from agent_platform.harness import AgentHarness
+from agent_platform.harness.guards.pii import PIIMasker
 from agent_platform.api.routers import chat, hitl, tools, health, web_client
 
 logger = logging.getLogger("agent_platform.api")
@@ -37,11 +38,12 @@ def create_app(settings: PlatformSettings, pack: DomainPack) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # 3. Global Exception Handler (Fixes A9: mask internal stack traces)
+    # 3. Global Exception Handler (Mask internal error details & PII)
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         correlation_id = f"corr_{uuid.uuid4().hex[:10]}"
-        logger.error("Unhandled platform error [correlation_id=%s]: %s", correlation_id, exc, exc_info=True)
+        safe_exc = PIIMasker.mask(str(exc), fail_closed=False)
+        logger.error("Unhandled platform error [correlation_id=%s]: %s", correlation_id, safe_exc)
         return JSONResponse(
             status_code=500,
             content={
@@ -78,4 +80,3 @@ def get_default_app() -> FastAPI:
 
 
 app = get_default_app()
-

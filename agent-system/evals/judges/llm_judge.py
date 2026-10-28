@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from agent_platform.llm.base import LLMPort
+from agent_platform.harness.guards.pii import PIIMasker
 
 class JudgeResult(BaseModel):
     groundedness_score: float = Field(ge=0.0, le=1.0)
@@ -23,10 +24,13 @@ class TrueLLMJudge:
         self.llm = judge_llm
 
     async def evaluate(self, query: str, final_answer: str, evidence_snippets: list[str]) -> JudgeResult:
-        evidence_text = "\n---\n".join(evidence_snippets) if evidence_snippets else "[No evidence provided]"
+        safe_query = PIIMasker.mask(query, fail_closed=True)
+        safe_answer = PIIMasker.mask(final_answer, fail_closed=True)
+        safe_snippets = [PIIMasker.mask(s, fail_closed=True) for s in evidence_snippets]
+        evidence_text = "\n---\n".join(safe_snippets) if safe_snippets else "[No evidence provided]"
         prompt = f"""
-        User Query: {query}
-        Agent Answer: {final_answer}
+        User Query: {safe_query}
+        Agent Answer: {safe_answer}
         Evidence Context:
         {evidence_text}
 

@@ -23,6 +23,7 @@ from agent_platform.harness.state.principal import Principal
 from agent_platform.api.deps import get_optional_principal, owned_thread, require_role
 from agent_platform.harness.guards.sanitizer import InputSanitizer
 from agent_platform.harness.guards.injection import PromptInjectionDetector
+from agent_platform.harness.guards.pii import PIIMasker
 from agent_platform.llm.providers.scripted import ScriptedLLM
 
 router = APIRouter(prefix="/api", tags=["Web Client Gateway"])
@@ -102,6 +103,8 @@ async def chat_stream_endpoint(
         # Emit thought traces for each executed tool
         for ev in state.get("tool_events", []):
             yield f"data: {json.dumps({'type': 'thought', 'content': f'Agent Reasoning: Quyết định gọi công cụ [{ev.tool_name}] (thời gian thực thi {ev.execution_time_ms:.1f}ms).'})}\n\n"
+            if ev.tool_name == "create_support_ticket" and ev.is_error and principal.role == "customer":
+                yield f"data: {json.dumps({'type': 'support_form', 'path': '/support'})}\n\n"
 
         if state.get("critic_cycles", 0) > 0:
             cycles = state.get("critic_cycles", 1)
@@ -119,7 +122,7 @@ async def chat_stream_endpoint(
                 args = ev.arguments
             else:
                 tool_name = "request_return_or_refund"
-                args = {"amount": "500000", "reason": clean_query}
+                args = {"amount": "500000", "reason": PIIMasker.mask(clean_query, fail_closed=False)}
 
             amount_val = args.get("amount", "500000")
             order_val = args.get("order_id", "ORD-100201")
@@ -129,7 +132,7 @@ async def chat_stream_endpoint(
                 thread_id=thread_id,
                 run_id=state.get("run_id", f"run_{uuid.uuid4().hex[:8]}"),
                 tool_name=tool_name,
-                arguments=args,
+                arguments=PIIMasker.mask(args, fail_closed=False),
                 approver_role="admin",
                 approval_id=task_id,
             )

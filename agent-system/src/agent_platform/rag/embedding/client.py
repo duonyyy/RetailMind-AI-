@@ -20,6 +20,7 @@ import time
 from typing import List, Optional, Dict, Any
 
 import httpx
+from agent_platform.harness.guards.pii import PIIMasker
 
 
 
@@ -246,14 +247,17 @@ class OpenAICompatibleEmbeddingClient(BaseEmbeddingClient):
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
+        # Redact texts fail-closed before provider egress
+        redacted_texts = [PIIMasker.mask(t, fail_closed=True) for t in texts]
         url = f"{self.base_url}/embeddings"
-        payload = {"model": self._model, "input": texts}
+        payload = {"model": self._model, "input": redacted_texts}
 
         with httpx.Client(timeout=self.timeout) as client:
             resp = client.post(url, json=payload, headers=self._get_headers())
             if resp.status_code != 200:
+                safe_text = PIIMasker.mask(resp.text[:300])
                 raise RuntimeError(
-                    f"OpenAI embedding request failed [{resp.status_code}]: {resp.text}"
+                    f"OpenAI embedding request failed [{resp.status_code}]: {safe_text}"
                 )
             data = resp.json().get("data", [])
             data.sort(key=lambda x: x.get("index", 0))
@@ -269,14 +273,17 @@ class OpenAICompatibleEmbeddingClient(BaseEmbeddingClient):
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
+        # Redact texts fail-closed before provider egress
+        redacted_texts = [PIIMasker.mask(t, fail_closed=True) for t in texts]
         url = f"{self.base_url}/embeddings"
-        payload = {"model": self._model, "input": texts}
+        payload = {"model": self._model, "input": redacted_texts}
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(url, json=payload, headers=self._get_headers())
             if resp.status_code != 200:
+                safe_text = PIIMasker.mask(resp.text[:300])
                 raise RuntimeError(
-                    f"OpenAI async embedding request failed [{resp.status_code}]: {resp.text}"
+                    f"OpenAI async embedding request failed [{resp.status_code}]: {safe_text}"
                 )
             data = resp.json().get("data", [])
             data.sort(key=lambda x: x.get("index", 0))
@@ -320,16 +327,19 @@ class GeminiEmbeddingClient(BaseEmbeddingClient):
         return "gemini"
 
     def embed_query(self, query: str) -> List[float]:
+        # Redact query fail-closed before provider egress
+        redacted_query = PIIMasker.mask(query, fail_closed=True)
         url = f"{self.base_url}/models/{self._model}:embedContent?key={self.api_key}"
         payload = {
             "model": f"models/{self._model}",
-            "content": {"parts": [{"text": query}]}
+            "content": {"parts": [{"text": redacted_query}]}
         }
         with httpx.Client(timeout=self.timeout) as client:
             resp = client.post(url, json=payload)
             if resp.status_code != 200:
+                safe_text = PIIMasker.mask(resp.text[:300])
                 raise RuntimeError(
-                    f"Gemini embedContent failed [{resp.status_code}]: {resp.text}"
+                    f"Gemini embedContent failed [{resp.status_code}]: {safe_text}"
                 )
             data = resp.json()
             values = data.get("embedding", {}).get("values", [])
@@ -340,6 +350,8 @@ class GeminiEmbeddingClient(BaseEmbeddingClient):
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
+        # Redact texts fail-closed before provider egress
+        redacted_texts = [PIIMasker.mask(t, fail_closed=True) for t in texts]
         url = f"{self.base_url}/models/{self._model}:batchEmbedContents?key={self.api_key}"
         payload = {
             "requests": [
@@ -347,30 +359,34 @@ class GeminiEmbeddingClient(BaseEmbeddingClient):
                     "model": f"models/{self._model}",
                     "content": {"parts": [{"text": t}]}
                 }
-                for t in texts
+                for t in redacted_texts
             ]
         }
         with httpx.Client(timeout=self.timeout) as client:
             resp = client.post(url, json=payload)
             if resp.status_code != 200:
+                safe_text = PIIMasker.mask(resp.text[:300])
                 raise RuntimeError(
-                    f"Gemini batchEmbedContents failed [{resp.status_code}]: {resp.text}"
+                    f"Gemini batchEmbedContents failed [{resp.status_code}]: {safe_text}"
                 )
             data = resp.json()
             embeddings = [item.get("values", []) for item in data.get("embeddings", [])]
             return embeddings
 
     async def aembed_query(self, query: str) -> List[float]:
+        # Redact query fail-closed before provider egress
+        redacted_query = PIIMasker.mask(query, fail_closed=True)
         url = f"{self.base_url}/models/{self._model}:embedContent?key={self.api_key}"
         payload = {
             "model": f"models/{self._model}",
-            "content": {"parts": [{"text": query}]}
+            "content": {"parts": [{"text": redacted_query}]}
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(url, json=payload)
             if resp.status_code != 200:
+                safe_text = PIIMasker.mask(resp.text[:300])
                 raise RuntimeError(
-                    f"Gemini async embedContent failed [{resp.status_code}]: {resp.text}"
+                    f"Gemini async embedContent failed [{resp.status_code}]: {safe_text}"
                 )
             data = resp.json()
             values = data.get("embedding", {}).get("values", [])
@@ -381,6 +397,8 @@ class GeminiEmbeddingClient(BaseEmbeddingClient):
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
+        # Redact texts fail-closed before provider egress
+        redacted_texts = [PIIMasker.mask(t, fail_closed=True) for t in texts]
         url = f"{self.base_url}/models/{self._model}:batchEmbedContents?key={self.api_key}"
         payload = {
             "requests": [
@@ -388,14 +406,15 @@ class GeminiEmbeddingClient(BaseEmbeddingClient):
                     "model": f"models/{self._model}",
                     "content": {"parts": [{"text": t}]}
                 }
-                for t in texts
+                for t in redacted_texts
             ]
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(url, json=payload)
             if resp.status_code != 200:
+                safe_text = PIIMasker.mask(resp.text[:300])
                 raise RuntimeError(
-                    f"Gemini async batchEmbedContents failed [{resp.status_code}]: {resp.text}"
+                    f"Gemini async batchEmbedContents failed [{resp.status_code}]: {safe_text}"
                 )
             data = resp.json()
             embeddings = [item.get("values", []) for item in data.get("embeddings", [])]

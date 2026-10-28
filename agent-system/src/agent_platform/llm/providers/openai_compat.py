@@ -3,6 +3,10 @@ from typing import List, Dict, Any, Optional, AsyncIterator
 import httpx
 from agent_platform.llm.base import LLMPort, LLMResponse, LLMChunk, ToolCall, Usage
 
+def _mask_pii(data: Any, fail_closed: bool = True) -> Any:
+    from agent_platform.harness.guards.pii import PIIMasker
+    return PIIMasker.mask(data, fail_closed=fail_closed)
+
 class OpenAICompatibleLLM(LLMPort):
     """
     OpenAI-Compatible LLM Client supporting native Tool Calling and true SSE streaming.
@@ -55,9 +59,11 @@ class OpenAICompatibleLLM(LLMPort):
         temperature: float = 0.0,
         max_tokens: int = 2048,
     ) -> LLMResponse:
+        # Fail-closed PII redaction before provider egress
+        redacted_messages = _mask_pii(messages, fail_closed=True)
         payload: Dict[str, Any] = {
             "model": self.model_name,
-            "messages": messages,
+            "messages": redacted_messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
@@ -73,6 +79,14 @@ class OpenAICompatibleLLM(LLMPort):
             )
             resp.raise_for_status()
             data = resp.json()
+        except httpx.HTTPStatusError as exc:
+            safe_text = _mask_pii(exc.response.text[:300], fail_closed=False) if exc.response is not None else ""
+            raise RuntimeError(f"OpenAI completion failed [{exc.response.status_code}]: {safe_text}") from None
+        except Exception as exc:
+            if isinstance(exc, RuntimeError) and "OpenAI completion failed" in str(exc):
+                raise
+            safe_msg = _mask_pii(str(exc), fail_closed=False)
+            raise RuntimeError(f"OpenAI completion request error: {safe_msg}") from None
         finally:
             if not self._external_client:
                 await client.aclose()
@@ -120,9 +134,11 @@ class OpenAICompatibleLLM(LLMPort):
         tools: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.0,
     ) -> AsyncIterator[LLMChunk]:
+        # Fail-closed PII redaction before provider egress
+        redacted_messages = _mask_pii(messages, fail_closed=True)
         payload: Dict[str, Any] = {
             "model": self.model_name,
-            "messages": messages,
+            "messages": redacted_messages,
             "temperature": temperature,
             "stream": True,
         }

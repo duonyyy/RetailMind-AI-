@@ -9,6 +9,7 @@ from agent_platform.harness.tools.spec import ToolContext, ToolUnavailableError
 from agent_platform.harness.tools.idempotency import IdempotencyManager
 from agent_platform.harness.governance.policy import PolicyEngine
 from agent_platform.harness.governance.audit_ledger import TamperEvidentHashChainLedger
+from agent_platform.harness.guards.pii import PIIMasker
 
 class ToolExecutionResult:
     def __init__(
@@ -34,18 +35,31 @@ class ToolExecutionResult:
             "approval_metadata": self.approval_metadata,
         }
 
+
+def _contains_redaction_placeholder(value: Any) -> bool:
+    """A redacted model argument cannot be used as authoritative business data."""
+    placeholders = ("[REDACTED_PHONE]", "[REDACTED_CCCD]", "[REDACTED_EMAIL]",
+                    "[REDACTED_SECRET]", "[REDACTED_TOKEN]", "[REDACTED_API_KEY]")
+    if isinstance(value, str):
+        return any(marker in value for marker in placeholders)
+    if isinstance(value, dict):
+        return any(_contains_redaction_placeholder(v) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_redaction_placeholder(v) for v in value)
+    return False
+
 class ToolExecutor:
     """
     Executes tools through strict 9-step governance and security pipeline:
     1. Registry scope check
-    2. Pydantic typed validation
+    2. Pydantic typed validation (with sanitized error output)
     3. Server-side RBAC authorization
     4. Policy rules evaluation (Decimal-safe)
     5. HITL interrupt gating
     6. Idempotency replay check (sha256(thread_id + call_id))
     7. Timed async execution with timeout
-    8. Tamper-evident hash chain audit logging
-    9. Output sanitization & delimiter wrapping
+    8. Tamper-evident hash chain audit logging (with truly masked inputs)
+    9. Output sanitization & delimiter wrapping (with PII redaction)
     """
 
     def __init__(
@@ -80,12 +94,27 @@ class ToolExecutor:
                 error_code="tool_not_found",
             )
 
+        # An LLM sees placeholders only. Never execute them as real data.
+        if _contains_redaction_placeholder(arguments):
+            return ToolExecutionResult(
+                output="Không thể sử dụng thông tin đã che để thực hiện yêu cầu. Vui lòng cung cấp thông tin qua kênh nhập liệu an toàn khi có hỗ trợ.",
+                is_error=True,
+                error_code="sensitive_input_unavailable",
+            )
+
         # Step 2: Pydantic typed validation
         try:
             validated_args = tool_spec.input_model(**arguments)
         except ValidationError as ve:
+            masked_errors = []
+            for err in ve.errors():
+                loc = err.get("loc", ())
+                field = next((part for part in reversed(loc) if isinstance(part, str)), "input")
+                masked_input = PIIMasker.mask({field: err.get("input")}, fail_closed=False)
+                masked_errors.append({"type": err.get("type"), "loc": PIIMasker.mask(loc, fail_closed=False),
+                                      "input": next(iter(masked_input.values()))})
             return ToolExecutionResult(
-                output=f"Input validation error for tool '{tool_name}': {ve.errors()}",
+                output=f"Input validation error for tool '{tool_name}': {masked_errors}",
                 is_error=True,
                 error_code="validation_error",
             )
@@ -104,7 +133,7 @@ class ToolExecutor:
                 role=principal.role,
                 tenant_id=principal.tenant_id,
                 tool_name=tool_name,
-                input_masked={"arguments_keys": list(arguments.keys())},
+                input_masked={"arguments_keys": PIIMasker.mask(list(arguments.keys()), fail_closed=False)},
                 decision="forbidden",
             )
             return ToolExecutionResult(
@@ -133,7 +162,7 @@ class ToolExecutor:
                         "rule": tool_spec.approval_rule,
                         "approver_role": decision.approver_role,
                         "timeout_hours": decision.timeout_hours,
-                        "arguments": args_dict,
+                        "arguments": PIIMasker.mask(args_dict, fail_closed=False),
                     },
                 )
 
@@ -143,7 +172,7 @@ class ToolExecutor:
             cached_output = self.idempotency.get(idem_key)
             return ToolExecutionResult(output=cached_output, is_error=False)
 
-        # Step 7: Timed Execution
+        # Step 7: Timed Execution (Backend receives trusted, unmasked business data)
         ctx = ToolContext(
             principal=principal,
             idempotency_key=idem_key,
@@ -161,7 +190,7 @@ class ToolExecutor:
 
             raw_output = await asyncio.wait_for(exec_coro, timeout=tool_spec.timeout_s)
         except ToolUnavailableError as exc:
-            return ToolExecutionResult(output=str(exc), is_error=True, error_code="unavailable")
+            return ToolExecutionResult(output=PIIMasker.mask(str(exc), fail_closed=False), is_error=True, error_code="unavailable")
         except asyncio.TimeoutError:
             return ToolExecutionResult(
                 output=("Không thể xác nhận kết quả thao tác; hãy kiểm tra trạng thái trước khi thử lại."
@@ -171,12 +200,12 @@ class ToolExecutor:
             )
         except Exception as exc:
             return ToolExecutionResult(
-                output=f"Execution error in tool '{tool_name}': {str(exc)}",
+                output=f"Execution error in tool '{tool_name}': {PIIMasker.mask(str(exc), fail_closed=False)}",
                 is_error=True,
                 error_code="execution_failure",
             )
 
-        # Step 8: Tamper-Evident Audit Logging
+        # Step 8: Tamper-Evident Audit Logging (Inputs are verified masked)
         self.audit_ledger.record_event(
             event_id=f"audit_{call_id}",
             thread_id=thread_id,
@@ -184,12 +213,13 @@ class ToolExecutor:
             role=principal.role,
             tenant_id=principal.tenant_id,
             tool_name=tool_name,
-            input_masked=args_dict,
+            input_masked=PIIMasker.mask(args_dict, fail_closed=False),
             decision="executed",
         )
 
-        # Step 9: Output Sanitization & Escaping
-        sanitized_str = json.dumps(raw_output, default=str, ensure_ascii=False) if isinstance(raw_output, (dict, list)) else str(raw_output)
+        # Step 9: Output Sanitization & Escaping (Outputs are verified masked before reaching LLM / State)
+        masked_output = PIIMasker.mask(raw_output, fail_closed=False)
+        sanitized_str = json.dumps(masked_output, default=str, ensure_ascii=False) if isinstance(masked_output, (dict, list)) else PIIMasker.mask_text(str(masked_output))
         if len(sanitized_str) > 4000:
             sanitized_str = sanitized_str[:4000] + "... [truncated]"
 

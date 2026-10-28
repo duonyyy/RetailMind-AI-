@@ -29,6 +29,7 @@ from agent_platform.llm.providers.mock import MockLLMClient
 from agent_platform.llm.providers.openai_compat import OpenAICompatibleLLM
 from agent_platform.llm.providers.gemini import GeminiLLM
 from agent_platform.llm.resilient import ResilientLLMClient
+from agent_platform.harness.guards.pii import PIIMasker
 
 
 class AgentHarness:
@@ -145,10 +146,10 @@ class AgentHarness:
             memory_context=mem_ctx if mem_ctx else None,
         )
 
-        # Update Tier 1 working memory turns
-        self.memory.add_working_turn(session_key, "user", query)
+        # Update Tier 1 working memory turns (masked to prevent raw PII accumulation)
+        self.memory.add_working_turn(session_key, "user", PIIMasker.mask(query, fail_closed=False))
         if ans_text := state.get("final_answer"):
-            self.memory.add_working_turn(session_key, "assistant", ans_text)
+            self.memory.add_working_turn(session_key, "assistant", PIIMasker.mask(ans_text, fail_closed=False))
 
         # Record FinOps usage in Decimal ledger
         ans_text = state.get("final_answer") or ""
@@ -195,7 +196,7 @@ class AgentHarness:
             role="admin",
             tenant_id=self.pack.name,
             tool_name=resolved.tool_name,
-            input_masked={"approval_id": approval_id, "decision": decision, "note": note},
+            input_masked={"approval_id": approval_id, "decision": decision, "note": PIIMasker.mask(note, fail_closed=False)},
             decision=f"hitl_{decision}",
         )
 

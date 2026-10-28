@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 from langchain_core.messages import ToolMessage
 from agent_platform.harness.state.contracts import AgentState, Evidence, ToolEvent
 from agent_platform.harness.tools.executor import ToolExecutor
+from agent_platform.harness.guards.pii import PIIMasker
 
 def create_tool_exec_node(executor: ToolExecutor):
     """Factory creating the tool execution node."""
@@ -43,24 +44,28 @@ def create_tool_exec_node(executor: ToolExecutor):
             if result.requires_approval:
                 awaiting_approval = True
 
+            # ToolExecutor already produced masked output in wrapped_output
+            masked_output_str = str(result.output)
+
             tool_msg = ToolMessage(
-                content=str(result.output),
+                content=masked_output_str,
                 tool_call_id=call_id,
                 name=tool_name,
             )
             tool_messages.append(tool_msg)
 
+            # Mask arguments and output stored in ToolEvent
             events.append(ToolEvent(
                 tool_name=tool_name,
                 call_id=call_id,
-                arguments=args,
-                output=str(result.output)[:500],
+                arguments=PIIMasker.mask(args, fail_closed=False),
+                output=masked_output_str[:500],
                 is_error=result.is_error,
                 execution_time_ms=duration_ms,
             ))
 
-            if result.error_code in ("unavailable", "timeout"):
-                unavailable_message = str(result.output)
+            if result.error_code in ("unavailable", "timeout", "sensitive_input_unavailable"):
+                unavailable_message = masked_output_str
                 break
 
             # Extract evidence if read-only lookup or knowledge retrieval
@@ -70,7 +75,7 @@ def create_tool_exec_node(executor: ToolExecutor):
                 new_evidence.append(Evidence(
                     chunk_id=f"ev_{call_id}",
                     source_document=tool_name if tool_name != "search_knowledge" else "knowledge_store",
-                    content_snippet=str(result.output)[:400],
+                    content_snippet=masked_output_str[:400],
                     score=1.0,
                 ))
 

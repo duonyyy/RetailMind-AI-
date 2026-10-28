@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from agent_platform.harness.state.principal import Principal
 from agent_platform.api.deps import get_optional_principal, owned_thread
 from agent_platform.api.sse import format_sse_event
+from agent_platform.harness.guards.pii import PIIMasker
 
 router = APIRouter(prefix="/v1", tags=["Chat"])
 
@@ -56,7 +57,8 @@ async def chat_stream_endpoint(
     thread_id = await owned_thread(request, principal, req.thread_id)
 
     async def sse_generator():
-        yield format_sse_event("run.started", {"query": req.query, "user_id": principal.user_id, "thread_id": thread_id})
+        # Mask query in SSE run.started event
+        yield format_sse_event("run.started", {"query": PIIMasker.mask(req.query, fail_closed=False), "user_id": principal.user_id, "thread_id": thread_id})
 
         state = await harness.execute(
             query=req.query,

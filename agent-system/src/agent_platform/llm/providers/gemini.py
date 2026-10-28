@@ -1,7 +1,12 @@
 import json
+import re
 from typing import List, Dict, Any, Optional, AsyncIterator
 import httpx
 from agent_platform.llm.base import LLMPort, LLMResponse, LLMChunk, ToolCall, Usage
+
+def _mask_pii(data: Any, fail_closed: bool = True) -> Any:
+    from agent_platform.harness.guards.pii import PIIMasker
+    return PIIMasker.mask(data, fail_closed=fail_closed)
 
 class GeminiLLM(LLMPort):
     """
@@ -69,9 +74,11 @@ class GeminiLLM(LLMPort):
         temperature: float = 0.0,
         max_tokens: int = 2048,
     ) -> LLMResponse:
+        # Fail-closed PII redaction before provider egress
+        redacted_messages = _mask_pii(messages, fail_closed=True)
         url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
         payload: Dict[str, Any] = {
-            "contents": self._convert_messages(messages),
+            "contents": self._convert_messages(redacted_messages),
             "generationConfig": {
                 "temperature": temperature,
                 "maxOutputTokens": max_tokens,
@@ -85,6 +92,15 @@ class GeminiLLM(LLMPort):
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
+        except httpx.HTTPStatusError as exc:
+            safe_text = _mask_pii(exc.response.text[:300], fail_closed=False) if exc.response is not None else ""
+            raise RuntimeError(f"Gemini completion failed [{exc.response.status_code}]: {safe_text}") from None
+        except Exception as exc:
+            if isinstance(exc, RuntimeError) and "Gemini completion failed" in str(exc):
+                raise
+            safe_msg = _mask_pii(str(exc), fail_closed=False)
+            safe_msg = re.sub(r"key=[A-Za-z0-9_-]+", "key=[REDACTED_API_KEY]", safe_msg)
+            raise RuntimeError(f"Gemini completion request error: {safe_msg}") from None
         finally:
             if not self._external_client:
                 await client.aclose()
@@ -129,9 +145,11 @@ class GeminiLLM(LLMPort):
         temperature: float = 0.0,
     ) -> AsyncIterator[LLMChunk]:
         """True SSE streaming using Gemini streamGenerateContent endpoint."""
+        # Fail-closed PII redaction before provider egress
+        redacted_messages = _mask_pii(messages, fail_closed=True)
         url = f"{self.base_url}/models/{self.model_name}:streamGenerateContent?alt=sse&key={self.api_key}"
         payload: Dict[str, Any] = {
-            "contents": self._convert_messages(messages),
+            "contents": self._convert_messages(redacted_messages),
             "generationConfig": {"temperature": temperature},
         }
         if gemini_tools := self._convert_tools(tools):

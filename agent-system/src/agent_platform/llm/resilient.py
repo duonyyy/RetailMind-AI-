@@ -5,6 +5,11 @@ from agent_platform.llm.base import LLMPort, LLMResponse, LLMChunk
 
 logger = logging.getLogger("agent_platform.llm.resilient")
 
+def _mask_pii(data: Any, fail_closed: bool = True) -> Any:
+    """Lazy import to eliminate circular import cycle between llm and harness packages."""
+    from agent_platform.harness.guards.pii import PIIMasker
+    return PIIMasker.mask(data, fail_closed=fail_closed)
+
 class CircuitState:
     CLOSED = "CLOSED"
     OPEN = "OPEN"
@@ -17,6 +22,7 @@ class ResilientLLMClient(LLMPort):
     - Circuit Breaker to isolate upstream outage.
     - Automatic fallback downgrade ladder.
     - Exponential backoff with jitter on transient failures.
+    - Verified PII redaction before provider egress.
     """
 
     def __init__(
@@ -68,28 +74,32 @@ class ResilientLLMClient(LLMPort):
         temperature: float = 0.0,
         max_tokens: int = 2048,
     ) -> LLMResponse:
+        # Redact messages fail-closed before dispatching to primary/fallback
+        safe_messages = _mask_pii(messages, fail_closed=True)
+
         if self._should_use_fallback() and self.fallback:
             logger.warning("Primary circuit open; directing completion to fallback client")
             return await self.fallback.complete(
-                messages, tools=tools, temperature=temperature, max_tokens=max_tokens
+                safe_messages, tools=tools, temperature=temperature, max_tokens=max_tokens
             )
 
         # Retry loop on primary
         for attempt in range(self.max_retries + 1):
             try:
                 resp = await self.primary.complete(
-                    messages, tools=tools, temperature=temperature, max_tokens=max_tokens
+                    safe_messages, tools=tools, temperature=temperature, max_tokens=max_tokens
                 )
                 self._record_success()
                 return resp
             except Exception as e:
-                logger.warning("Primary LLM complete attempt %d failed: %s", attempt + 1, e)
+                safe_err = _mask_pii(str(e), fail_closed=False)
+                logger.warning("Primary LLM complete attempt %d failed: %s", attempt + 1, safe_err)
                 if attempt == self.max_retries:
                     self._record_failure()
                     if self.fallback:
                         logger.error("Primary LLM exhausted retries; falling back")
                         return await self.fallback.complete(
-                            messages, tools=tools, temperature=temperature, max_tokens=max_tokens
+                            safe_messages, tools=tools, temperature=temperature, max_tokens=max_tokens
                         )
                     raise
                 await asyncio.sleep(0.5 * (2 ** attempt))
@@ -103,21 +113,24 @@ class ResilientLLMClient(LLMPort):
         tools: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.0,
     ) -> AsyncIterator[LLMChunk]:
+        safe_messages = _mask_pii(messages, fail_closed=True)
+
         if self._should_use_fallback() and self.fallback:
-            async for chunk in self.fallback.stream(messages, tools=tools, temperature=temperature):
+            async for chunk in self.fallback.stream(safe_messages, tools=tools, temperature=temperature):
                 yield chunk
             return
 
         try:
-            async for chunk in self.primary.stream(messages, tools=tools, temperature=temperature):
+            async for chunk in self.primary.stream(safe_messages, tools=tools, temperature=temperature):
                 yield chunk
             self._record_success()
         except Exception as e:
             self._record_failure()
-            logger.error("Primary stream failed: %s", e)
+            safe_err = _mask_pii(str(e), fail_closed=False)
+            logger.error("Primary stream failed: %s", safe_err)
             if self.fallback:
                 logger.info("Redirecting stream to fallback client")
-                async for chunk in self.fallback.stream(messages, tools=tools, temperature=temperature):
+                async for chunk in self.fallback.stream(safe_messages, tools=tools, temperature=temperature):
                     yield chunk
             else:
                 raise

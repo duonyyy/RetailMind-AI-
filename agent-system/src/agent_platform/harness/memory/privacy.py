@@ -47,10 +47,6 @@ class MemoryPrivacyGuard:
     @staticmethod
     def minimize_pii(text: str) -> str:
         """Sanitizes sensitive identifying data before entering persistent memory."""
-        if not text:
-            return ""
-        sanitized = CCCD_REGEX.sub("[REDACTED_CCCD]", text)
-        sanitized = PHONE_REGEX.sub("[REDACTED_PHONE]", sanitized)
-        sanitized = EMAIL_REGEX.sub("[REDACTED_EMAIL]", sanitized)
-        return sanitized
+        from agent_platform.harness.guards.pii import PIIMasker
+        return PIIMasker.mask_text(text)
 
