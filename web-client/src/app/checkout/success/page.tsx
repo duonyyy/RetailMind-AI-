@@ -12,6 +12,8 @@ import {
   FileDown,
   PackageCheck,
   ArrowRight,
+  CreditCard,
+  Banknote,
 } from 'lucide-react';
 
 function OrderReceiptContent() {
@@ -22,6 +24,8 @@ function OrderReceiptContent() {
   const total = searchParams.get('total') || '19.239.000 ₫';
   const store = searchParams.get('store') || 'store-hcm-q1';
   const idemKey = searchParams.get('idem') || 'idem-verified-ssot-2026';
+  const method = searchParams.get('method') || 'QR_NAPAS247';
+  const isPaid = searchParams.get('paid') === 'true';
 
   const storeMap: Record<string, string> = {
     'store-hcm-q1': '136 Nguyễn Thái Học, Quận 1, TP.HCM (MWG_HCM_001)',
@@ -44,6 +48,15 @@ function OrderReceiptContent() {
         <p className="text-xs text-slate-500">
           Hệ thống PostgreSQL SSOT đã khóa bi quan sản phẩm tại siêu thị dành riêng cho quý khách.
         </p>
+
+        {isPaid && (
+          <div className="pt-1">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>✓ Đã xác nhận thanh toán trực tuyến qua VietQR Napas247</span>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Order Details Box */}
@@ -55,6 +68,18 @@ function OrderReceiptContent() {
         <div className="flex items-center justify-between">
           <span className="text-slate-500">Tổng thanh toán (Đã gồm VAT 10%):</span>
           <span className="text-base font-extrabold text-slate-900 tabular-nums">{total}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">Hình thức thanh toán:</span>
+          <span className="font-bold text-slate-800">
+            {method === 'QR_NAPAS247'
+              ? isPaid
+                ? 'Chuyển khoản QR Napas247 (Đã đối soát thành công ✓)'
+                : 'Chuyển khoản QR Napas247 (Thanh toán tại quầy thu ngân)'
+              : method === 'COD'
+              ? 'Thanh toán tiền mặt khi nhận hàng (COD)'
+              : 'Thẻ ATM / Visa / Mastercard'}
+          </span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-slate-500">Điểm nhận siêu thị MWG:</span>
@@ -122,4 +147,3 @@ export default function CheckoutSuccessPage() {
     </BrandSectionBackground>
   );
 }
-

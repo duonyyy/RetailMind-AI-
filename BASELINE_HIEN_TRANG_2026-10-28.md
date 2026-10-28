@@ -5,7 +5,7 @@ Ngày kiểm kê ban đầu: 28/10/2026
 Phạm vi: 12 use case, phân quyền RBAC/PBAC, ranh giới Agentic Runtime, bảo vệ dữ liệu PII và luồng Checkout Concurrency.  
 Loại bằng chứng: Đọc tài liệu, khảo sát mã nguồn chi tiết và **chạy kiểm thử thực tế toàn bộ test suites**:
 - `agent-system`: **230/230 tests passed (100% Green)**.
-- `core-api`: **41/41 tests passed (100% Green)** across 11 test suites.
+- `core-api`: **45/45 tests passed (100% Green)** across 12 test suites.
 
 ---
 
@@ -97,7 +97,8 @@ Loại bằng chứng: Đọc tài liệu, khảo sát mã nguồn chi tiết v�
 | ↳ *Injection Containment* | `pytest tests/integration/test_injection_containment_corpus.py` | 13 / 13 passed | 1.32 giây | 100% Green |
 | ↳ *E2E Tool PII Isolation* | `pytest tests/e2e/test_order_lookup_pii_isolation.py` | 2 / 2 passed | 0.94 giây | 100% Green |
 | ↳ *Retail Domain & Graph* | `pytest tests/unit/test_retail_domain.py tests/unit/test_agent_graph.py` | 8 / 8 passed | 1.80 giây | 100% Green |
-| **`core-api`** (Toàn bộ) | `npm test -- --passWithNoTests` | **41 / 41 passed** (11 suites) | ~53 giây | **100% GREEN** |
+| **`core-api`** (Toàn bộ) | `npm test -- --passWithNoTests` | **45 / 45 passed** (12 suites) | ~32 giây | **100% GREEN** |
+| ↳ *Orders ACID Transaction* | `jest src/features/orders/orders-transaction-acid.spec.ts` | Passed | - | 100% Green |
 | ↳ *Orders Concurrency* | `jest src/features/orders/orders-concurrency.spec.ts` | Passed | - | 100% Green |
 | ↳ *Production Config Guard* | `jest src/config/production-config.guard.spec.ts` | Passed | - | 100% Green |
 | ↳ *Architecture Boundaries* | `jest src/config/architecture-boundaries.spec.ts` | Passed | - | 100% Green |
@@ -112,8 +113,9 @@ Loại bằng chứng: Đọc tài liệu, khảo sát mã nguồn chi tiết v�
    - Đã đồng bộ đường dẫn monorepo từ `apps/backend` → `core-api`, `apps/agent` → `agent-system`, `apps/frontend` → `web-client`. Đồng thời chuẩn hóa cổng API client thành 4000.
 2. **[HOÀN TẤT] Mở container Phoenix Tracing trong `docker-compose.yml`:**
    - Đã bỏ comment container `phoenix` (`arizephoenix/phoenix:latest` cổng 6006) và kích hoạt `PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006/v1/traces` cho container `agent`. Cấu hình Docker Compose đã được xác thực `docker compose config` hợp lệ 100%.
-3. **Hoàn thiện lưu `OrderItem` & Hoàn tồn `restoreStockInTx` trong `core-api`:**
-   - Đảm bảo khi checkout lưu đầy đủ danh sách mặt hàng vào bảng `order_items`.
-   - Đảm bảo khi hủy đơn nhả số lượng `reserved_quantity` trong bảng `inventory`.
-4. **Nối Server Action `order.action.ts` trên Next.js client:**
-   - Bỏ lệnh ném lỗi tạm thời và kết nối sang route `POST /api/proxy/orders/checkout`.
+3. **[HOÀN TẤT] Hoàn thiện lưu `OrderItem`, `IdempotencyKey` & Hoàn tồn `restoreStockInTx` trong `core-api`:**
+   - Khi `checkout()`: Lưu bản ghi `OrderItem` vào bảng `order_items` và lưu `IdempotencyKey` vào bảng `idempotency_keys` trong cùng một ACID transaction với khóa bi quan `setLock('pessimistic_write')`.
+   - Khi `cancelOrder()`: Khóa đơn hàng, truy vấn các `order_items`, gọi `restoreStockInTx` hoàn trả tồn kho khả dụng (`reserved_quantity`), cập nhật `status = 'cancelled'` và `cancelled_at` trong transaction. Hoàn trả tồn kho cả ở in-memory fallback.
+4. **[HOÀN TẤT] Nối Server Action `order.action.ts` & Modal Quét Mã QR trên Next.js client:**
+   - Đã gỡ bỏ lệnh ném lỗi tạm thời, hoàn thiện Server Action `confirmOrderAction` gọi sang core-api (`POST /api/v1/orders/checkout`) với header `Idempotency-Key` và token xác thực, tự động revalidate cache tags `inventory` và `orders`.
+   - Hoàn thiện Component `SimulatedQRPaymentModal` (mô phỏng quét mã VietQR / Napas247 ngân hàng MB Bank, sao chép 1-click số tài khoản và nội dung mã đơn hàng, bộ đếm ngược 15 phút, giả lập đối soát và chuyển hướng biên nhận thanh toán). Toàn bộ 30 route của `web-client` được biên dịch tĩnh/động thành công 100%.

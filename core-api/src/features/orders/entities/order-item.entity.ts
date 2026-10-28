@@ -18,10 +18,10 @@ export class OrderItem {
   @Column({ type: 'uuid' })
   variant_id: string;
 
-  @Column({ type: 'varchar', length: 80 })
+  @Column({ type: 'varchar', length: 100 })
   sku_snapshot: string;
 
-  @Column({ type: 'varchar', length: 240 })
+  @Column({ type: 'varchar', length: 255 })
   title_snapshot: string;
 
   @Column({

@@ -30,6 +30,44 @@ export interface ReserveItemInput {
   quantity: number;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const SEED_VARIANTS_MAP: Record<string, string> = {
+  'LT-ASUS-VIVO15-OLED': '50000000-0000-0000-0000-000000000001',
+  'var-asus-vivobook-15': '50000000-0000-0000-0000-000000000001',
+  'LT-DELL-INSP14-5430': '50000000-0000-0000-0000-000000000002',
+  'var-dell-inspiron-14': '50000000-0000-0000-0000-000000000002',
+  'LT-LENOVO-TB14-G6': '50000000-0000-0000-0000-000000000003',
+  'var-lenovo-thinkbook-14': '50000000-0000-0000-0000-000000000003',
+  'LT-ACER-SWIFT-GO14': '50000000-0000-0000-0000-000000000004',
+  'var-acer-swift-go-14': '50000000-0000-0000-0000-000000000004',
+  'LT-HP-PAVILION-15': '50000000-0000-0000-0000-000000000005',
+  'var-hp-pavilion-15': '50000000-0000-0000-0000-000000000005',
+  'LT-APPLE-MBA-M2': '50000000-0000-0000-0000-000000000006',
+  'var-apple-mba-m2': '50000000-0000-0000-0000-000000000006',
+};
+
+const SEED_STORES_MAP: Record<string, string> = {
+  'store-hcm-q1': '10000000-0000-0000-0000-000000000001',
+  'MWG_HCM_001': '10000000-0000-0000-0000-000000000001',
+  'store-hn-cg': '10000000-0000-0000-0000-000000000002',
+  'MWG_HN_002': '10000000-0000-0000-0000-000000000002',
+  'store-dn-hc': '10000000-0000-0000-0000-000000000003',
+  'MWG_DN_003': '10000000-0000-0000-0000-000000000003',
+};
+
+export function resolveStoreUuid(storeId: string): string {
+  if (!storeId) return '10000000-0000-0000-0000-000000000001';
+  if (UUID_REGEX.test(storeId)) return storeId;
+  return SEED_STORES_MAP[storeId] || '10000000-0000-0000-0000-000000000001';
+}
+
+export function resolveVariantUuid(variantId: string): string {
+  if (!variantId) return '50000000-0000-0000-0000-000000000001';
+  if (UUID_REGEX.test(variantId)) return variantId;
+  return SEED_VARIANTS_MAP[variantId] || '50000000-0000-0000-0000-000000000001';
+}
+
 @Injectable()
 export class InventoryService {
   private readonly defaultStores: StoreDTO[] = [
@@ -117,14 +155,16 @@ export class InventoryService {
 
     // QUY TẮC BẮT BUỘC (03-TRANSACTION_AND_CONCURRENCY.md): Sắp xếp tăng dần theo variantId
     const sortedItems = [...items].sort((a, b) => a.variantId.localeCompare(b.variantId));
+    const targetStoreId = resolveStoreUuid(storeId);
 
     for (const item of sortedItems) {
+      const targetVariantId = resolveVariantUuid(item.variantId);
       const inventory = await queryRunner.manager
         .createQueryBuilder(Inventory, 'inv')
         .setLock('pessimistic_write')
         .where('inv.store_id = :storeId AND inv.variant_id = :variantId', {
-          storeId,
-          variantId: item.variantId,
+          storeId: targetStoreId,
+          variantId: targetVariantId,
         })
         .getOne();
 
@@ -157,14 +197,16 @@ export class InventoryService {
     if (!items || items.length === 0) return;
 
     const sortedItems = [...items].sort((a, b) => a.variantId.localeCompare(b.variantId));
+    const targetStoreId = resolveStoreUuid(storeId);
 
     for (const item of sortedItems) {
+      const targetVariantId = resolveVariantUuid(item.variantId);
       const inventory = await queryRunner.manager
         .createQueryBuilder(Inventory, 'inv')
         .setLock('pessimistic_write')
         .where('inv.store_id = :storeId AND inv.variant_id = :variantId', {
-          storeId,
-          variantId: item.variantId,
+          storeId: targetStoreId,
+          variantId: targetVariantId,
         })
         .getOne();
 

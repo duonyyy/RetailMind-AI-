@@ -24,6 +24,9 @@ export class Order {
   @Column({ type: 'uuid' })
   store_id: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  idempotency_key_id?: string;
+
   @Column({ type: 'varchar', length: 32, default: 'confirmed' })
   status: 'pending' | 'confirmed' | 'placed' | 'cancelled' | 'completed';
 

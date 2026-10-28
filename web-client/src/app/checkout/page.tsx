@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { BrandSectionBackground } from '@/components/patterns';
 import { PreviewTokenCountdown } from '@/features/checkout/components/PreviewTokenCountdown';
 import { calculateExactOrderPreview } from '@/features/checkout/services/preview-token.get';
+import { confirmOrderAction } from '@/features/checkout/services/order.action';
+import { ConfirmedOrderReceipt } from '@/features/checkout/types';
+import { SimulatedQRPaymentModal } from '@/features/checkout/components/SimulatedQRPaymentModal';
 import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
 import {
   Building2,
@@ -31,6 +34,10 @@ export default function CheckoutPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
+  // State quản lý Modal Quét Mã QR Thanh Toán Mô Phỏng
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [confirmedReceipt, setConfirmedReceipt] = useState<ConfirmedOrderReceipt | null>(null);
+
   const selectedProduct =
     BASELINE_LAPTOP_CATALOG.find((l) => l.sku === selectedSku) || BASELINE_LAPTOP_CATALOG[0];
 
@@ -56,28 +63,58 @@ export default function CheckoutPage() {
     const idempotencyKey = crypto.randomUUID();
 
     try {
-      const res = await fetch('/api/proxy/orders/checkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey,
-        },
-        body: JSON.stringify({
+      const res = await confirmOrderAction(
+        {
           storeId: selectedStoreId,
           items: [{ sku: selectedSku, quantity }],
           discountCode,
-        }),
-      });
+          deliveryMode,
+          paymentMethod,
+          customerName,
+          customerPhone,
+          deliveryAddress,
+          previewToken: preview.previewToken,
+        },
+        idempotencyKey
+      );
 
-      if (!res.ok) throw new Error('Không thể đặt hàng. Vui lòng đăng nhập và thử lại.');
-      const json = await res.json();
-      const order = json?.data?.data;
-      if (!order?.orderNo || !order?.formattedTotal) throw new Error('Không nhận được xác nhận đơn hàng hợp lệ.');
-      router.push(`/checkout/success?orderNo=${encodeURIComponent(order.orderNo)}&total=${encodeURIComponent(order.formattedTotal)}&store=${encodeURIComponent(selectedStoreId)}&idem=${idempotencyKey}`);
+      if (!res.success || !res.data) {
+        throw new Error('Không nhận được biên nhận đơn hàng hợp lệ.');
+      }
+
+      const receipt = res.data;
+
+      if (paymentMethod === 'QR_NAPAS247') {
+        // Mở Modal Quét Mã QR Thanh Toán Mô Phỏng
+        setConfirmedReceipt(receipt);
+        setQrModalOpen(true);
+      } else {
+        router.push(
+          `/checkout/success?orderNo=${encodeURIComponent(receipt.orderNo)}&total=${encodeURIComponent(receipt.formattedTotal)}&store=${encodeURIComponent(receipt.storeId)}&idem=${encodeURIComponent(receipt.idempotencyKey)}&method=${encodeURIComponent(paymentMethod)}`
+        );
+      }
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : 'Không thể đặt hàng.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleQRPaymentSuccess = () => {
+    if (!confirmedReceipt) return;
+    setQrModalOpen(false);
+    router.push(
+      `/checkout/success?orderNo=${encodeURIComponent(confirmedReceipt.orderNo)}&total=${encodeURIComponent(confirmedReceipt.formattedTotal)}&store=${encodeURIComponent(confirmedReceipt.storeId)}&idem=${encodeURIComponent(confirmedReceipt.idempotencyKey)}&method=QR_NAPAS247&paid=true`
+    );
+  };
+
+  const handleQRPaymentClose = () => {
+    setQrModalOpen(false);
+    if (confirmedReceipt) {
+      // Khách hàng chọn thanh toán tại quầy
+      router.push(
+        `/checkout/success?orderNo=${encodeURIComponent(confirmedReceipt.orderNo)}&total=${encodeURIComponent(confirmedReceipt.formattedTotal)}&store=${encodeURIComponent(confirmedReceipt.storeId)}&idem=${encodeURIComponent(confirmedReceipt.idempotencyKey)}&method=QR_NAPAS247&paid=false`
+      );
     }
   };
 
@@ -89,7 +126,11 @@ export default function CheckoutPage() {
       withGlow={true}
       className="min-h-full p-6 sm:p-8 space-y-6"
     >
-      {checkoutError && <p role="alert" className="text-red-700">{checkoutError}</p>}
+      {checkoutError && (
+        <div role="alert" className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
+          {checkoutError}
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
@@ -328,7 +369,19 @@ export default function CheckoutPage() {
           </div>
         </div>
       </form>
+
+      {/* Modal Quét Mã QR Thanh Toán Mô Phỏng */}
+      {confirmedReceipt && (
+        <SimulatedQRPaymentModal
+          isOpen={qrModalOpen}
+          orderNo={confirmedReceipt.orderNo}
+          totalVnd={confirmedReceipt.totalVnd}
+          formattedTotal={confirmedReceipt.formattedTotal}
+          storeName={confirmedReceipt.storeName}
+          onSuccess={handleQRPaymentSuccess}
+          onClose={handleQRPaymentClose}
+        />
+      )}
     </BrandSectionBackground>
   );
 }
-
