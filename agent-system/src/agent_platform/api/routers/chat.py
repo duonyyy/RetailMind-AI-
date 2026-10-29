@@ -20,6 +20,7 @@ class ChatResponse(BaseModel):
     final_answer: Optional[str]
     status: str
     grounding_score: Optional[float]
+    grounding_status: Optional[str] = None
     citations: list[str] = []
 
 @router.post("/chat", response_model=ChatResponse)
@@ -52,6 +53,7 @@ async def chat_endpoint(
         final_answer=state.get("final_answer"),
         status=state.get("status", "unknown"),
         grounding_score=state.get("grounding_score"),
+        grounding_status=state.get("grounding_status"),
         citations=list(dict.fromkeys(citations)),
     )
 
@@ -92,6 +94,6 @@ async def chat_stream_endpoint(
         if citations:
             yield format_sse_event("citations", {"sources": list(dict.fromkeys(citations))})
 
-        yield format_sse_event("run.done", {"status": state.get("status", "done")})
+        yield format_sse_event("run.done", {"status": state.get("status", "done"), "grounding_status": state.get("grounding_status")})
 
     return StreamingResponse(sse_generator(), media_type="text/event-stream")

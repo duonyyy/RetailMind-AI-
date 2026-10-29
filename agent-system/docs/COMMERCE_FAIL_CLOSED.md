@@ -24,6 +24,10 @@ Core-api's internal cart, cancellation, support ticket and favorite routes curre
 - Refund requests within policy thresholds create durable HITL approval records (`agent.hitl_approvals`) for supervisor review.
 - Public customer commerce endpoints (via web-client checkout) operate under separate transactional boundaries.
 
-## 4. Dữ Liệu Tồn Kho Danh Mục (Catalog Fallback)
+## 4. Dữ Liệu Danh Mục Và Tồn Kho
 
-Catalog fallback results omit inventory and stock fields (`stock_available`, `available_qty`, etc.) because static catalog fallback data cannot establish live real-time inventory availability across MWG store branches. Live inventory requires verified queries against the authoritative PostgreSQL database.
+Catalog search, product detail and comparison require Core responses with the expected product and integer-VND price fields. An explicitly confirmed empty catalog list is returned as empty; backend failure, unconfirmed product identity and malformed responses fail closed. The Agent does not use the local catalog as a fallback for these tools. Inventory fields are removed from catalog results; live inventory requires a separate authoritative lookup. Other tool paths and Core's own data mapping require separate verification.
+
+## 5. Kết Quả Nghiệp Vụ Và Grounding
+
+`query_order_status` and `lookup_order` use a separate internal result contract for a Core-confirmed order ID and one of the Core order states. The critic permits only the exact server-generated order-status sentence, reports `grounding_status=verified_commerce` and returns no document citation or numeric grounding score. Extra model-generated claims are not accepted. A source label in an ordinary tool response does not grant this status. This path is deliberately limited to a single read-only order-status call; other commerce tools, multi-tool requests, side-effect results and RAG do not gain verified grounding through this mechanism. Core/provider live operation and end-to-end ownership enforcement require separate integration tests.

@@ -69,7 +69,7 @@ def build_orchestration_graph(
     def route_after_critic(state: AgentState) -> Literal["finalize", "agent", "abstain"]:
         cycles = state.get("critic_cycles", 0)
 
-        if state.get("grounding_status") in ("exact_quote", "not_applicable"):
+        if state.get("grounding_status") in ("exact_quote", "not_applicable", "verified_commerce"):
             return "finalize"
         if cycles < pack.limits.max_critic_cycles:
             return "agent"

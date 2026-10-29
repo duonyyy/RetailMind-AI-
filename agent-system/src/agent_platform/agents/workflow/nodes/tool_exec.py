@@ -24,6 +24,7 @@ def create_tool_exec_node(executor: ToolExecutor):
         awaiting_approval = False
         unavailable_message = None
         approval_call = None
+        verified_commerce_answer = None
 
         for tc in pending_calls:
             t_start = time.time()
@@ -55,9 +56,12 @@ def create_tool_exec_node(executor: ToolExecutor):
 
             # ToolExecutor already produced masked output in wrapped_output
             masked_output_str = str(result.output)
+            if len(pending_calls) == 1 and not result.is_error and result.commerce_answer:
+                verified_commerce_answer = result.commerce_answer
 
             tool_msg = ToolMessage(
-                content=masked_output_str,
+                content=(masked_output_str + "\nCâu trả lời nghiệp vụ đã được kiểm tra: " + verified_commerce_answer
+                         if verified_commerce_answer else masked_output_str),
                 tool_call_id=call_id,
                 name=tool_name,
             )
@@ -88,6 +92,7 @@ def create_tool_exec_node(executor: ToolExecutor):
             "pending_tool_calls": [],
             "tool_events": events,
             "evidence": new_evidence,
+            "verified_commerce_answer": verified_commerce_answer,
         }
 
         if unavailable_message:

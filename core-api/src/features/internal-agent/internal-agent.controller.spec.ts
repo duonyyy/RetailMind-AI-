@@ -217,6 +217,32 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
   });
 
   describe('Phase 5 Unlocked Tools (Real Service Integration)', () => {
+    it('fails closed when favorite persistence is unavailable', async () => {
+      (service as any).customersService = undefined;
+      await expect(service.manageFavorite('cust-1', { sku: 'ABC', action: 'add' }))
+        .rejects.toThrow('Dịch vụ quản lý yêu thích hiện không khả dụng.');
+    });
+
+    it('does not mutate favorites when the product cannot be verified', async () => {
+      mockCustomersService.setFavorite.mockClear();
+      jest.spyOn((service as any).catalogService, 'getProductBySku').mockRejectedValue(new Error('catalog unavailable'));
+      await expect(service.manageFavorite('cust-1', { sku: 'ABC', action: 'add' })).rejects.toThrow();
+      expect(mockCustomersService.setFavorite).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unconfirmed favorite result', async () => {
+      mockCustomersService.setFavorite.mockResolvedValueOnce({ isFavorited: undefined });
+      await expect(service.manageFavorite('cust-1', { sku: 'LT-ASUS-VIVO15-OLED', action: 'add' }))
+        .rejects.toThrow('Không thể xác nhận trạng thái yêu thích.');
+    });
+
+    it('rejects invalid actions and contradictory favorite results', async () => {
+      await expect(service.manageFavorite('cust-1', { sku: 'ABC', action: 'invalid' as any }))
+        .rejects.toThrow(BadRequestException);
+      mockCustomersService.setFavorite.mockResolvedValueOnce({ isFavorited: false });
+      await expect(service.manageFavorite('cust-1', { sku: 'LT-ASUS-VIVO15-OLED', action: 'add' }))
+        .rejects.toThrow('Không thể xác nhận trạng thái yêu thích.');
+    });
     it('1. catalogSearch should return typed envelope and matched products', async () => {
       const res = await controller.catalogSearch({ query: 'Asus' });
       expect(res.status).toBe('success');

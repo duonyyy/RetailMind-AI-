@@ -420,41 +420,33 @@ export class InternalAgentService {
       throw new BadRequestException('Mã SKU hoặc variant_id là bắt buộc.');
     }
     const action = args.action || 'toggle';
-
-    let variantId = targetSku;
-    if (this.catalogService) {
-      try {
-        const product = await this.catalogService.getProductBySku(targetSku);
-        if (product) {
-          variantId = product.id;
-        }
-      } catch {
-        // Fallback to targetSku if unresolvable
-      }
+    if (!['add', 'remove', 'toggle'].includes(action)) {
+      throw new BadRequestException('Thao tác yêu thích không hợp lệ.');
     }
 
-    if (this.customersService) {
-      const toggled = await this.customersService.setFavorite(customerId, variantId, action);
-      return {
-        status: 'success',
-        customer_id: customerId,
-        sku: targetSku,
-        variant_id: variantId,
-        action,
-        is_favorited: toggled.isFavorited,
-        message: toggled.isFavorited
-          ? `Đã thêm sản phẩm [${targetSku}] vào danh sách yêu thích.`
-          : `Đã xóa sản phẩm [${targetSku}] khỏi danh sách yêu thích.`,
-      };
+    if (!this.customersService) {
+      throw new ServiceUnavailableException('Dịch vụ quản lý yêu thích hiện không khả dụng.');
     }
-
+    const product = await this.catalogService.getProductBySku(targetSku);
+    if (!product?.id) {
+      throw new ServiceUnavailableException('Không thể xác nhận sản phẩm yêu thích.');
+    }
+    const variantId = product.id;
+    const toggled = await this.customersService.setFavorite(customerId, variantId, action);
+    if (typeof toggled?.isFavorited !== 'boolean' ||
+        (action !== 'toggle' && toggled.isFavorited !== (action === 'add'))) {
+      throw new ServiceUnavailableException('Không thể xác nhận trạng thái yêu thích.');
+    }
     return {
       status: 'success',
       customer_id: customerId,
       sku: targetSku,
+      variant_id: variantId,
       action,
-      is_favorited: action === 'add' || action === 'toggle',
-      message: `Đã cập nhật danh sách yêu thích cho sản phẩm [${targetSku}].`,
+      is_favorited: toggled.isFavorited,
+      message: toggled.isFavorited
+        ? `Đã thêm sản phẩm [${targetSku}] vào danh sách yêu thích.`
+        : `Đã xóa sản phẩm [${targetSku}] khỏi danh sách yêu thích.`,
     };
   }
 }

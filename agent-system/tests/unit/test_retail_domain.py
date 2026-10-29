@@ -31,7 +31,7 @@ def test_load_retail_store_domain():
     assert "admin" in pack.roles
 
 
-def test_retail_laptop_catalog_tool():
+def test_retail_laptop_catalog_tool(monkeypatch):
     async def _run():
         registry = DomainRegistry("domains")
         pack = registry.get("retail_store")
@@ -42,6 +42,17 @@ def test_retail_laptop_catalog_tool():
 
         tool = tool_reg.get("lookup_laptop_catalog")
         assert tool is not None
+
+        async def catalog_backend(endpoint, payload, ctx):
+            items = [
+                {"sku": "ASUS", "name": "Asus Vivobook 15", "price_vnd": "17990000", "brand": "ASUS"},
+                {"sku": "DELL", "name": "Dell Inspiron 14", "price_vnd": "18490000", "brand": "DELL"},
+                {"sku": "LENOVO", "name": "Lenovo ThinkBook 14", "price_vnd": "19990000", "brand": "LENOVO"},
+            ]
+            if payload.get("brand"):
+                items = [item for item in items if item["brand"] == payload["brand"]]
+            return {"count": len(items), "laptops": items}
+        monkeypatch.setitem(tool.func.__globals__, "_call_nestjs_tool", catalog_backend)
 
         policy = PolicyEngine.load_from_file(pack.pack_dir / pack.policies)
         executor = ToolExecutor(tool_reg, policy)
@@ -151,7 +162,7 @@ def test_retail_refund_governance_tiers():
     asyncio.run(_run())
 
 
-def test_retail_knowledge_retriever_hybrid():
+def test_retail_knowledge_requires_verified_source():
     async def _run():
         registry = DomainRegistry("domains")
         pack = registry.get("retail_store")
@@ -172,8 +183,9 @@ def test_retail_knowledge_retriever_hybrid():
             principal=principal,
             call_id="call_retrieval_01",
         )
-        assert res.is_error is False
-        assert "30 ngày" in res.output or "24 tháng" in res.output
+        assert res.is_error is True
+        assert res.error_code == "unavailable"
+        assert "30 ngày" not in res.output and "24 tháng" not in res.output
 
     asyncio.run(_run())
 
@@ -205,8 +217,8 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order(monkeypatch):
 
         # 1. Public tools accessible by guest
         res_detail = await executor.execute("get_product_details", {"sku": "LAP-ASUS-VIVO15"}, guest, call_id="c1")
-        assert res_detail.is_error is False
-        assert "Vivobook 15 OLED" in res_detail.output
+        assert res_detail.is_error is True
+        assert res_detail.error_code == "unavailable"
 
         res_cmp = await executor.execute(
             "compare_products",
@@ -214,8 +226,8 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order(monkeypatch):
             guest,
             call_id="c2",
         )
-        assert res_cmp.is_error is False
-        assert "LAP-ASUS-VIVO15" in res_cmp.output and "LAP-DELL-INSP14" in res_cmp.output
+        assert res_cmp.is_error is True
+        assert res_cmp.error_code == "unavailable"
 
         res_inv = await executor.execute(
             "check_inventory",
@@ -284,8 +296,8 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order(monkeypatch):
             customer,
             call_id="c10",
         )
-        assert res_fav.is_error is False
-        assert "LAP-LEN-THINK14" in res_fav.output
+        assert res_fav.is_error is True
+        assert res_fav.error_code == "unavailable"
 
         res_cancel = await executor.execute(
             "cancel_simulated_order",

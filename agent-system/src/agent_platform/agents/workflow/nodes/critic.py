@@ -17,6 +17,10 @@ def critic_node(state: AgentState) -> dict:
     if normalized.rstrip("!. ") in {"xin chào", "chào bạn", "xin chào bạn", "cảm ơn", "cảm ơn bạn"}:
         return {"critic_cycles": cycles, "grounding_score": None, "grounding_status": "not_applicable", "matched_evidence": [], "critic_feedback": None}
 
+    commerce_answer = state.get("verified_commerce_answer")
+    if commerce_answer and normalized == _normalize(commerce_answer):
+        return {"critic_cycles": cycles, "grounding_score": None, "grounding_status": "verified_commerce", "matched_evidence": [], "critic_feedback": None}
+
     matched = [
         ev for ev in state.get("evidence", [])
         if ev.source_verified and ev.document_version_id and ev.chunk_id and ev.source_document

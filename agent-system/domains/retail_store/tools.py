@@ -3,15 +3,14 @@
 Adheres strictly to ADR-007, 04-INTERNAL_TOOL_GATEWAY.md & AGENTS.md:
 - Typed validation with Pydantic v2
 - Exact financial arithmetic with Decimal (never float)
-- Zero side-effect without authorization & Server-Side X-Customer-Id anti-IDOR header
-- Real Hybrid RAG retrieval (BM25Okapi + Dense Vector / Qdrant + RRF k=60 + Reranker) over corpus documents
+- Customer tools require authorization enforced by Core
+- Policy retrieval remains unavailable until published provenance is verifiable
 - Strictly NO confirm_order tool (Agent stops at preview_order with 10-minute HMAC preview_token)
 """
 
 import json
 import logging
 import os
-import sys
 import time
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -19,7 +18,7 @@ from typing import Any, Dict, List, Literal, Optional
 import httpx
 from pydantic import BaseModel, Field
 
-from agent_platform.harness.tools.spec import tool, ToolContext, ToolUnavailableError
+from agent_platform.harness.tools.spec import tool, ToolContext, ToolUnavailableError, ConfirmedOrderStatus
 from agent_platform.rag.retrieval.hybrid_engine import ProductionHybridRetriever as PlatformHybridRetriever
 
 logger = logging.getLogger("retail_store.tools")
@@ -192,6 +191,26 @@ def _without_inventory(value: Any) -> Any:
     return value
 
 
+def _verified_catalog_item(value: Any, price_field: str) -> bool:
+    """Validate the minimum Core catalog contract, including integer VND."""
+    if not isinstance(value, dict):
+        return False
+    price = value.get(price_field)
+    return (
+        isinstance(value.get("sku"), str) and bool(value["sku"].strip())
+        and isinstance(value.get("name"), str) and bool(value["name"].strip())
+        and not isinstance(price, bool)
+        and ((isinstance(price, int) and price >= 0)
+             or (isinstance(price, str) and price.isascii() and price.isdecimal()))
+    )
+
+
+def _matches_product_ref(value: Dict[str, Any], ref: str) -> bool:
+    requested = ref.strip().casefold()
+    return any(isinstance(candidate, str) and candidate.strip().casefold() == requested
+               for candidate in (value.get("sku"), value.get("id")))
+
+
 # ---------------------------------------------------------------------------
 # Knowledge Corpus Documents & Real Hybrid RAG Engine (BM25 + Dense + Qdrant)
 # ---------------------------------------------------------------------------
@@ -324,10 +343,7 @@ class DomainHybridRAGAdapter:
         return [dict(self.corpus[0], score=0.85)]
 
 
-# Initialize domain hybrid retriever instance (cached across dynamic module reloads)
-if getattr(sys, "_retailmind_hybrid_retriever", None) is None:
-    setattr(sys, "_retailmind_hybrid_retriever", DomainHybridRAGAdapter(_load_markdown_policy_corpus()))
-retail_retriever: DomainHybridRAGAdapter = getattr(sys, "_retailmind_hybrid_retriever")
+# Do not initialize or index the unverified local corpus at domain load time.
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +383,7 @@ class LaptopCatalogInput(BaseModel):
     timeout_s=5.0,
 )
 async def lookup_laptop_catalog(args: LaptopCatalogInput, ctx: ToolContext) -> Dict[str, Any]:
-    """Filters MWG laptop catalog using NestJS Commerce SSOT with local baseline fallback."""
+    """Search the Core catalog; an empty verified list is a valid result."""
     payload = {
         "query": args.keyword,
         "max_price_vnd": int(args.max_price) if args.max_price is not None else None,
@@ -375,49 +391,13 @@ async def lookup_laptop_catalog(args: LaptopCatalogInput, ctx: ToolContext) -> D
         "min_ram_gb": args.min_ram_gb,
         "brand": args.brand,
     }
-    live_data = await _call_nestjs_tool("search_products", payload, ctx)
-    if live_data and live_data.get("laptops"):
-        laptops = live_data["laptops"]
-        return {
-            "status": "success",
-            "source": "nestjs_commerce_ssot",
-            "total_matched": len(laptops),
-            "items": _without_inventory(laptops),
-        }
-
-    matched: List[Dict[str, Any]] = []
-    for item in LAPTOP_CATALOG:
-        if args.max_price is not None and item["price_vnd"] > args.max_price:
-            continue
-        if args.min_price is not None and item["price_vnd"] < args.min_price:
-            continue
-        if args.min_ram_gb is not None and item["ram_gb"] < args.min_ram_gb:
-            continue
-        if args.brand and args.brand.strip().upper() != item["brand"]:
-            continue
-        if args.keyword:
-            kw = args.keyword.strip().lower()
-            combined_text = f"{item['name']} {item['cpu']} {item['display']}".lower()
-            if kw not in combined_text:
-                continue
-
-        matched.append({
-            "sku": item["sku"],
-            "name": item["name"],
-            "brand": item["brand"],
-            "cpu": item["cpu"],
-            "ram_gb": item["ram_gb"],
-            "ssd_gb": item["ssd_gb"],
-            "display": item["display"],
-            "price_vnd": str(item["price_vnd"]),
-            "warranty_months": item["warranty_months"],
-        })
-
-    return {
-        "status": "success",
-        "total_matched": len(matched),
-        "items": matched,
-    }
+    live_data = await _require_commerce_result("search_products", payload, ctx, ("count", "laptops"))
+    laptops, count = live_data["laptops"], live_data["count"]
+    if (not isinstance(laptops, list) or type(count) is not int or count != len(laptops)
+            or not all(_verified_catalog_item(item, "price_vnd") for item in laptops)):
+        raise ToolUnavailableError("Không thể xác minh danh mục sản phẩm.")
+    return {"status": "success", "source": "nestjs_commerce_ssot", "total_matched": count,
+            "items": _without_inventory(laptops)}
 
 
 # ---------------------------------------------------------------------------
@@ -440,35 +420,10 @@ class ProductDetailsInput(BaseModel):
     timeout_s=5.0,
 )
 async def get_product_details(args: ProductDetailsInput, ctx: ToolContext) -> Dict[str, Any]:
-    item = _find_catalog_item(args.sku)
-    target_sku = item.get("aliases", [item["sku"]])[0] if item else args.sku
-    live_data = await _call_nestjs_tool("get_product_details", {"sku": target_sku, "variant_id": target_sku}, ctx)
-    if live_data:
-        return {"status": "success", "source": "nestjs_commerce_ssot", "product": _without_inventory(live_data)}
-
-    item = _find_catalog_item(args.sku)
-    if not item:
-        return {
-            "status": "not_found",
-            "sku": args.sku,
-            "message": f"Không tìm thấy sản phẩm với mã SKU '{args.sku}'.",
-        }
-
-    return {
-        "status": "success",
-        "product": {
-            "sku": item["sku"],
-            "name": item["name"],
-            "brand": item["brand"],
-            "cpu": item["cpu"],
-            "gpu": item["gpu"],
-            "ram_gb": item["ram_gb"],
-            "ssd_gb": item["ssd_gb"],
-            "display": item["display"],
-            "price_vnd": str(item["price_vnd"]),
-            "warranty_months": item["warranty_months"],
-        },
-    }
+    live_data = await _require_commerce_result("get_product_details", {"sku": args.sku, "variant_id": args.sku}, ctx, ("sku", "name", "priceVnd"))
+    if not _verified_catalog_item(live_data, "priceVnd") or not _matches_product_ref(live_data, args.sku):
+        raise ToolUnavailableError("Không thể xác minh chi tiết sản phẩm.")
+    return {"status": "success", "source": "nestjs_commerce_ssot", "product": _without_inventory(live_data)}
 
 
 # ---------------------------------------------------------------------------
@@ -492,35 +447,14 @@ class CompareProductsInput(BaseModel):
     timeout_s=5.0,
 )
 async def compare_products(args: CompareProductsInput, ctx: ToolContext) -> Dict[str, Any]:
-    live_data = await _call_nestjs_tool("compare_products", {"skus": args.skus, "variant_ids": args.skus}, ctx)
-    if live_data and live_data.get("comparison"):
-        return {
-            "status": "success",
-            "source": "nestjs_commerce_ssot",
-            "total": live_data.get("total", len(live_data["comparison"])),
-            "comparison": _without_inventory(live_data["comparison"]),
-        }
-
-    compared: List[Dict[str, Any]] = []
-    for s in args.skus:
-        item = _find_catalog_item(s)
-        if item:
-            compared.append({
-                "sku": item["sku"],
-                "name": item["name"],
-                "brand": item["brand"],
-                "cpu": item["cpu"],
-                "ram_gb": item["ram_gb"],
-                "ssd_gb": item["ssd_gb"],
-                "display": item["display"],
-                "price_vnd": str(item["price_vnd"]),
-            })
-
-    return {
-        "status": "success",
-        "total": len(compared),
-        "comparison": compared,
-    }
+    live_data = await _require_commerce_result("compare_products", {"skus": args.skus, "variant_ids": args.skus}, ctx, ("total", "comparison"))
+    comparison, total = live_data["comparison"], live_data["total"]
+    if (not isinstance(comparison, list) or type(total) is not int or total != len(comparison)
+            or total != len(args.skus) or not all(_verified_catalog_item(item, "priceVnd") for item in comparison)
+            or not all(_matches_product_ref(item, ref) for item, ref in zip(comparison, args.skus))):
+        raise ToolUnavailableError("Không thể xác minh dữ liệu so sánh sản phẩm.")
+    return {"status": "success", "source": "nestjs_commerce_ssot", "total": total,
+            "comparison": _without_inventory(comparison)}
 
 
 # ---------------------------------------------------------------------------
@@ -572,38 +506,15 @@ class SearchKnowledgeInput(BaseModel):
 
 @tool(
     name="search_knowledge",
-    description="Tra cứu chính sách đổi trả, bảo hành 24 tháng, hạn mức tài chính và danh mục laptop MWG từ kho tri thức Hybrid RAG.",
+    description="Tra cứu tài liệu chính sách đã được xác minh khi dịch vụ tri thức khả dụng.",
     input_model=SearchKnowledgeInput,
     side_effect=False,
     allowed_roles=["*"],
     timeout_s=8.0,
 )
 async def search_knowledge(args: SearchKnowledgeInput, ctx: ToolContext) -> Dict[str, Any]:
-    """Performs Two-Stage Hybrid Retrieval (BM25 + Dense + RRF + Reranker) over the retail knowledge corpus."""
-    results = retail_retriever.retrieve_two_stage(
-        query=args.query,
-        top_k=args.top_k,
-        candidate_pool_size=max(6, args.top_k * 2),
-    )
-
-    formatted_results: List[Dict[str, Any]] = []
-    for r in results:
-        formatted_results.append({
-            "chunk_id": r.get("id", "doc_retail"),
-            "source": r.get("title", "Tài liệu RetailMind AI"),
-            "statute": r.get("statute", ""),
-            "page": r.get("page", 1),
-            "title": r.get("title", ""),
-            "content": r.get("content", ""),
-            "snippet": r.get("snippet", r.get("content", "")[:200]),
-            "relevance_score": r.get("score", 0.95),
-        })
-
-    return {
-        "query": args.query,
-        "total_results": len(formatted_results),
-        "results": formatted_results,
-    }
+    """No verified published version, chunk and access-controlled retrieval is wired yet."""
+    raise ToolUnavailableError("Chưa thể xác minh tài liệu chính sách đang được công bố. Vui lòng thử lại sau.")
 
 
 # ---------------------------------------------------------------------------
@@ -732,7 +643,7 @@ async def preview_order(args: PreviewOrderInput, ctx: ToolContext) -> Dict[str, 
 class OrderStatusInput(BaseModel):
     order_id: str = Field(
         ...,
-        pattern=r"^(ORD-\d{6,10}|MWG-\d{8}-\d{4})$",
+        pattern=r"^(ORD-\d{6,10}|MWG-\d{8}-(?:\d{4}|[A-F0-9]{8}))$",
         description="Mã đơn hàng hợp lệ (định dạng ORD-XXXXXX hoặc MWG-YYYYMMDD-XXXX)",
     )
 
@@ -747,9 +658,10 @@ class OrderStatusInput(BaseModel):
 )
 async def query_order_status(args: OrderStatusInput, ctx: ToolContext) -> Dict[str, Any]:
     data = await _require_commerce_result("get_order_status", {"order_id": args.order_id, "order_no": args.order_id}, ctx, ("order_id", "order_status"))
-    if data["order_id"] != args.order_id or not isinstance(data["order_status"], str) or not data["order_status"]:
+    if (data["order_id"] != args.order_id or not isinstance(data["order_status"], str) or data["order_status"] not in
+            {"PENDING", "CONFIRMED", "PLACED", "CANCELLED", "COMPLETED"}):
         raise ToolUnavailableError("Không thể xác minh trạng thái đơn hàng.")
-    return {**data, "status": "success", "source": "nestjs_commerce_ssot"}
+    return ConfirmedOrderStatus({**data, "status": "success", "source": "nestjs_commerce_ssot"})
 
 # ---------------------------------------------------------------------------
 @tool(
@@ -762,7 +674,7 @@ async def query_order_status(args: OrderStatusInput, ctx: ToolContext) -> Dict[s
 )
 async def lookup_order(args: OrderStatusInput, ctx: ToolContext) -> Dict[str, Any]:
     """Canonical alias for query_order_status."""
-    return await query_order_status(args, ctx)
+    return await query_order_status.func(args, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -860,7 +772,11 @@ async def manage_favorite(args: ManageFavoriteInput, ctx: ToolContext) -> Dict[s
         {"sku": args.sku, "variant_id": args.sku, "action": args.action},
         ctx,
     )
-    if live_data and live_data.get("status") == "success":
+    if (isinstance(live_data, dict) and live_data.get("status") == "success"
+            and live_data.get("customer_id") == ctx.principal.user_id
+            and live_data.get("sku") == args.sku and live_data.get("action") == args.action
+            and type(live_data.get("is_favorited")) is bool
+            and (args.action == "toggle" or live_data["is_favorited"] == (args.action == "add"))):
         return {"source": "nestjs_commerce_ssot", **live_data}
     raise ToolUnavailableError("Không thể xác nhận kết quả yêu thích; hãy kiểm tra trạng thái trước khi thử lại.")
 

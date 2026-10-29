@@ -39,6 +39,7 @@ class OrchestratorRunner:
             "grounding_score": None,
             "grounding_status": None,
             "matched_evidence": [],
+            "verified_commerce_answer": None,
             "memory_context": memory_context,
             "status": "running",
         }

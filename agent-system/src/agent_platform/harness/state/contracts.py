@@ -55,5 +55,6 @@ class AgentState(TypedDict):
     grounding_score: Optional[float]
     grounding_status: Optional[str]
     matched_evidence: List[Evidence]
+    verified_commerce_answer: Optional[str]
     memory_context: Optional[str]
     status: Literal["running", "awaiting_approval", "done", "abstained", "failed"]

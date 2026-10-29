@@ -5,6 +5,9 @@ from agent_platform.harness.state.principal import Principal
 class ToolUnavailableError(Exception):
     """A trusted source did not confirm the requested operation."""
 
+class ConfirmedOrderStatus(dict):
+    """Internal marker produced only after the Core order-status contract is validated."""
+
 class ToolContext(BaseModel):
     """Contextual metadata injected by server into tool execution."""
     principal: Principal

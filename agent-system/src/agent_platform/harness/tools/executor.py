@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 from pydantic import ValidationError
 from agent_platform.harness.state.principal import Principal
 from agent_platform.harness.tools.registry import ToolRegistry
-from agent_platform.harness.tools.spec import ToolContext, ToolUnavailableError
+from agent_platform.harness.tools.spec import ToolContext, ToolUnavailableError, ConfirmedOrderStatus
 from agent_platform.harness.tools.idempotency import IdempotencyManager
 from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.governance.policy import PolicyEngine
@@ -20,12 +20,14 @@ class ToolExecutionResult:
         error_code: Optional[str] = None,
         requires_approval: bool = False,
         approval_metadata: Optional[Dict[str, Any]] = None,
+        commerce_answer: Optional[str] = None,
     ) -> None:
         self.output = output
         self.is_error = is_error
         self.error_code = error_code
         self.requires_approval = requires_approval
         self.approval_metadata = approval_metadata or {}
+        self.commerce_answer = commerce_answer
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -279,4 +281,15 @@ class ToolExecutor:
             decision="executed",
         )
 
-        return ToolExecutionResult(output=wrapped_output, is_error=False)
+        commerce_answer = None
+        if (not tool_spec.side_effect and tool_name in ("query_order_status", "lookup_order")
+                and isinstance(raw_output, ConfirmedOrderStatus)):
+            order_id = raw_output.get("order_id")
+            order_status = raw_output.get("order_status")
+            if (isinstance(order_id, str) and order_id == args_dict.get("order_id")
+                    and isinstance(order_status, str) and order_status in
+                    {"PENDING", "CONFIRMED", "PLACED", "CANCELLED", "COMPLETED"}):
+                commerce_answer = PIIMasker.mask(
+                    f"Đơn hàng {order_id} có trạng thái {order_status}.", fail_closed=True
+                )
+        return ToolExecutionResult(output=wrapped_output, is_error=False, commerce_answer=commerce_answer)
