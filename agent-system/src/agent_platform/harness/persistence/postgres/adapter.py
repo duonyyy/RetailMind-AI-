@@ -1,176 +1,304 @@
-"""PostgreSQL KVStore & Audit Persistence Adapter (Production SSOT).
+"""PostgreSQL KVStore & Thread Ownership Persistence Adapter (Production SSOT).
 
-Supports live PostgreSQL 16+ via psycopg / asyncpg when postgres_url is provided,
-with resilient local SQLite/in-memory fallback for offline/unit test environments.
+Fail-closed design:
+- Connects exclusively to PostgreSQL (isolated `agent` schema by default).
+- Zero in-memory (`sqlite3 :memory:` or dict) fallback: if PostgreSQL is not configured,
+  unreachable, or fails during a read/write/commit, raises `PersistenceError`.
+- Scrubs DSNs, credentials, and PII from all logs and error messages.
 """
+
+from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 import time
 from typing import Any, Dict, List, Optional
-from agent_platform.harness.persistence.ports import KVStorePort
+
+from agent_platform.harness.persistence.ports import (
+    KVStorePort,
+    PersistenceError,
+    sanitize_persistence_error,
+)
+from agent_platform.harness.persistence.postgres.migrations import (
+    validate_sql_identifier,
+    with_schema_search_path,
+)
 
 logger = logging.getLogger("agent_platform.persistence.postgres")
 
 
 class PostgresKVStore(KVStorePort):
-    """PostgreSQL-backed KVStorePort implementation with resilient SQLite fallback."""
+    """Fail-closed PostgreSQL-backed KVStorePort implementation."""
 
-    def __init__(self, dsn: str = "") -> None:
-        self.dsn = dsn
-        self._pg_available = False
-        self._mem_conn = sqlite3.connect(":memory:", check_same_thread=False)
-        self._init_schema()
+    def __init__(
+        self,
+        dsn: str = "",
+        schema: str = "agent",
+        connect_timeout: int = 3,
+    ) -> None:
+        self.dsn = (dsn or "").strip()
+        self.schema = validate_sql_identifier(schema or "agent", "schema")
+        self.connect_timeout = connect_timeout
 
-    def _init_schema(self) -> None:
-        self._mem_conn.execute("""
-            CREATE TABLE IF NOT EXISTS agent_kv_store (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                expires_at REAL
+    def _require_conninfo(self) -> str:
+        if not self.dsn or not self.dsn.startswith(("postgres://", "postgresql://")):
+            raise PersistenceError(
+                "PostgresKVStore requires a valid PostgreSQL DSN; "
+                "refusing to fall back to in-memory storage."
             )
-        """)
-        self._mem_conn.commit()
+        return with_schema_search_path(self.dsn, self.schema)
 
-        if self.dsn and self.dsn.startswith("postgresql"):
-            try:
-                import psycopg
-                with psycopg.connect(self.dsn, connect_timeout=2) as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS agent_kv_store (
-                                key VARCHAR(255) PRIMARY KEY,
-                                value JSONB NOT NULL,
-                                expires_at DOUBLE PRECISION
-                            )
-                        """)
-                    conn.commit()
-                self._pg_available = True
-            except Exception as exc:
-                logger.debug("PostgreSQL DSN unreachable (%s), using embedded fallback table.", exc)
-                self._pg_available = False
+    def _connect(self):
+        import psycopg
+
+        conninfo = self._require_conninfo()
+        try:
+            return psycopg.connect(
+                conninfo,
+                connect_timeout=self.connect_timeout,
+                autocommit=False,
+            )
+        except Exception as exc:
+            safe_msg = sanitize_persistence_error(exc)
+            logger.error("PostgreSQL KV connection failed (schema=%s): %s", self.schema, safe_msg)
+            raise PersistenceError(f"PostgreSQL KV unavailable: {safe_msg}") from exc
 
     async def get(self, key: str) -> Optional[Any]:
         now = time.time()
-        if self._pg_available:
-            try:
-                import psycopg
-                with psycopg.connect(self.dsn, connect_timeout=2) as conn:
-                    with conn.cursor() as cur:
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    if key.startswith("chat_owner:"):
+                        thread_id = key.split("chat_owner:", 1)[1]
                         cur.execute(
-                            "SELECT value, expires_at FROM agent_kv_store WHERE key = %s",
+                            f"""
+                            SELECT user_id, tenant_id, role
+                            FROM {self.schema}.thread_ownership
+                            WHERE thread_id = %s
+                            """,
+                            (thread_id,),
+                        )
+                        owner_row = cur.fetchone()
+                        if owner_row:
+                            return {
+                                "user_id": owner_row[0],
+                                "tenant_id": owner_row[1],
+                            }
+
+                    cur.execute(
+                        f"""
+                        SELECT value, expires_at
+                        FROM {self.schema}.agent_kv_store
+                        WHERE key = %s
+                        """,
+                        (key,),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        return None
+                    val, expires_at = row
+                    if expires_at is not None and now > float(expires_at):
+                        cur.execute(
+                            f"DELETE FROM {self.schema}.agent_kv_store WHERE key = %s",
                             (key,),
                         )
-                        row = cur.fetchone()
-                        if not row:
-                            return None
-                        val, expires_at = row
-                        if expires_at and now > expires_at:
-                            cur.execute("DELETE FROM agent_kv_store WHERE key = %s", (key,))
-                            conn.commit()
-                            return None
-                        return val
-            except Exception as exc:
-                logger.debug("PostgreSQL get fallback (%s)", exc)
+                        conn.commit()
+                        return None
+                    if isinstance(val, str):
+                        try:
+                            return json.loads(val)
+                        except Exception:
+                            return val
+                    return val
+        except PersistenceError:
+            raise
+        except Exception as exc:
+            safe_msg = sanitize_persistence_error(exc)
+            logger.error("PostgreSQL KV get failed for key prefix: %s", safe_msg)
+            raise PersistenceError(f"PostgreSQL KV read failed: {safe_msg}") from exc
 
-        cursor = self._mem_conn.cursor()
-        cursor.execute("SELECT value, expires_at FROM agent_kv_store WHERE key = ?", (key,))
-        row = cursor.fetchone()
-        if not row:
-            return None
-        val_str, expires_at = row
-        if expires_at and now > expires_at:
-            self._mem_conn.execute("DELETE FROM agent_kv_store WHERE key = ?", (key,))
-            self._mem_conn.commit()
-            return None
-        try:
-            return json.loads(val_str)
-        except Exception:
-            return val_str
-
-    async def set(self, key: str, value: Any, ttl_seconds: Optional[int] = None) -> None:
+    async def set(
+        self, key: str, value: Any, ttl_seconds: Optional[int] = None
+    ) -> None:
         now = time.time()
         expires_at = (now + ttl_seconds) if ttl_seconds else None
-        val_str = json.dumps(value, default=str) if not isinstance(value, str) else value
+        payload_json = json.dumps(value, default=str)
 
-        if self._pg_available:
-            try:
-                import psycopg
-                with psycopg.connect(self.dsn, connect_timeout=2) as conn:
-                    with conn.cursor() as cur:
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    if key.startswith("chat_owner:") and isinstance(value, dict):
+                        thread_id = key.split("chat_owner:", 1)[1]
+                        user_id = str(value.get("user_id") or "")
+                        tenant_id = str(value.get("tenant_id") or "default")
+                        role = str(value.get("role") or "user")
                         cur.execute(
-                            """
-                            INSERT INTO agent_kv_store (key, value, expires_at)
-                            VALUES (%s, %s::jsonb, %s)
-                            ON CONFLICT (key) DO UPDATE SET
-                                value = EXCLUDED.value,
-                                expires_at = EXCLUDED.expires_at
+                            f"""
+                            INSERT INTO {self.schema}.thread_ownership
+                                (thread_id, user_id, tenant_id, role, created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (thread_id) DO NOTHING
+                            RETURNING user_id, tenant_id
                             """,
-                            (key, json.dumps(value, default=str), expires_at),
+                            (thread_id, user_id, tenant_id, role, now, now),
                         )
-                    conn.commit()
-                return
-            except Exception as exc:
-                logger.debug("PostgreSQL set fallback (%s)", exc)
+                        inserted = cur.fetchone()
+                        if inserted is None:
+                            cur.execute(
+                                f"""
+                                SELECT user_id, tenant_id
+                                FROM {self.schema}.thread_ownership
+                                WHERE thread_id = %s
+                                """,
+                                (thread_id,),
+                            )
+                            existing = cur.fetchone()
+                            if existing and (
+                                existing[0] != user_id or existing[1] != tenant_id
+                            ):
+                                raise PermissionError(
+                                    "Cannot overwrite existing thread ownership with a different principal."
+                                )
 
-        self._mem_conn.execute(
-            """
-            INSERT INTO agent_kv_store (key, value, expires_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(key) DO UPDATE SET
-                value = excluded.value,
-                expires_at = excluded.expires_at
-            """,
-            (key, val_str, expires_at),
-        )
-        self._mem_conn.commit()
+                    cur.execute(
+                        f"""
+                        INSERT INTO {self.schema}.agent_kv_store (key, value, expires_at)
+                        VALUES (%s, %s::jsonb, %s)
+                        ON CONFLICT (key) DO UPDATE SET
+                            value = EXCLUDED.value,
+                            expires_at = EXCLUDED.expires_at
+                        """,
+                        (key, payload_json, expires_at),
+                    )
+                conn.commit()
+        except (PersistenceError, PermissionError):
+            raise
+        except Exception as exc:
+            safe_msg = sanitize_persistence_error(exc)
+            logger.error("PostgreSQL KV set failed: %s", safe_msg)
+            raise PersistenceError(f"PostgreSQL KV write failed: {safe_msg}") from exc
+
+    async def claim_or_verify_thread_owner(
+        self,
+        thread_id: str,
+        user_id: str,
+        tenant_id: str,
+        role: str = "user",
+        ttl_seconds: int = 86400 * 7,
+    ) -> Dict[str, Any]:
+        """
+        Atomically bind a new thread to `(user_id, tenant_id)` or return the existing
+        owner without race conditions (`INSERT ... ON CONFLICT DO NOTHING`).
+        """
+        now = time.time()
+        expires_at = now + ttl_seconds if ttl_seconds else None
+        owner_doc = {"user_id": user_id, "tenant_id": tenant_id, "role": role}
+        owner_key = f"chat_owner:{thread_id}"
+
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        INSERT INTO {self.schema}.thread_ownership
+                            (thread_id, user_id, tenant_id, role, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (thread_id) DO NOTHING
+                        RETURNING user_id, tenant_id, role
+                        """,
+                        (thread_id, user_id, tenant_id, role, now, now),
+                    )
+                    inserted = cur.fetchone()
+                    if inserted is not None:
+                        cur.execute(
+                            f"""
+                            INSERT INTO {self.schema}.agent_kv_store (key, value, expires_at)
+                            VALUES (%s, %s::jsonb, %s)
+                            ON CONFLICT (key) DO NOTHING
+                            """,
+                            (owner_key, json.dumps(owner_doc), expires_at),
+                        )
+                        conn.commit()
+                        return {
+                            "user_id": inserted[0],
+                            "tenant_id": inserted[1],
+                            "role": inserted[2],
+                        }
+
+                    cur.execute(
+                        f"""
+                        SELECT user_id, tenant_id, role
+                        FROM {self.schema}.thread_ownership
+                        WHERE thread_id = %s
+                        """,
+                        (thread_id,),
+                    )
+                    existing = cur.fetchone()
+                    conn.commit()
+                    if existing is None:
+                        raise PersistenceError(
+                            "Thread ownership state inconsistent after atomic claim."
+                        )
+                    return {
+                        "user_id": existing[0],
+                        "tenant_id": existing[1],
+                        "role": existing[2],
+                    }
+        except PersistenceError:
+            raise
+        except Exception as exc:
+            safe_msg = sanitize_persistence_error(exc)
+            logger.error("PostgreSQL thread ownership claim failed: %s", safe_msg)
+            raise PersistenceError(
+                f"PostgreSQL thread ownership check failed: {safe_msg}"
+            ) from exc
 
     async def delete(self, key: str) -> bool:
-        if self._pg_available:
-            try:
-                import psycopg
-                with psycopg.connect(self.dsn, connect_timeout=2) as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("DELETE FROM agent_kv_store WHERE key = %s", (key,))
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    deleted = False
+                    if key.startswith("chat_owner:"):
+                        thread_id = key.split("chat_owner:", 1)[1]
+                        cur.execute(
+                            f"DELETE FROM {self.schema}.thread_ownership WHERE thread_id = %s",
+                            (thread_id,),
+                        )
                         deleted = cur.rowcount > 0
-                    conn.commit()
-                return deleted
-            except Exception as exc:
-                logger.debug("PostgreSQL delete fallback (%s)", exc)
 
-        cursor = self._mem_conn.cursor()
-        cursor.execute("DELETE FROM agent_kv_store WHERE key = ?", (key,))
-        self._mem_conn.commit()
-        return cursor.rowcount > 0
+                    cur.execute(
+                        f"DELETE FROM {self.schema}.agent_kv_store WHERE key = %s",
+                        (key,),
+                    )
+                    deleted = deleted or (cur.rowcount > 0)
+                conn.commit()
+                return deleted
+        except PersistenceError:
+            raise
+        except Exception as exc:
+            safe_msg = sanitize_persistence_error(exc)
+            logger.error("PostgreSQL KV delete failed: %s", safe_msg)
+            raise PersistenceError(f"PostgreSQL KV delete failed: {safe_msg}") from exc
 
     async def list_keys(self, prefix: str = "") -> List[str]:
         now = time.time()
-        if self._pg_available:
-            try:
-                import psycopg
-                with psycopg.connect(self.dsn, connect_timeout=2) as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            SELECT key FROM agent_kv_store
-                            WHERE (expires_at IS NULL OR expires_at > %s)
-                              AND key LIKE %s
-                            """,
-                            (now, f"{prefix}%"),
-                        )
-                        return [r[0] for r in cur.fetchall()]
-            except Exception as exc:
-                logger.debug("PostgreSQL list_keys fallback (%s)", exc)
-
-        cursor = self._mem_conn.cursor()
-        cursor.execute(
-            """
-            SELECT key FROM agent_kv_store
-            WHERE (expires_at IS NULL OR expires_at > ?)
-              AND key LIKE ?
-            """,
-            (now, f"{prefix}%"),
-        )
-        return [r[0] for r in cursor.fetchall()]
-
+        try:
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT key
+                        FROM {self.schema}.agent_kv_store
+                        WHERE (expires_at IS NULL OR expires_at > %s)
+                          AND key LIKE %s
+                        ORDER BY key ASC
+                        """,
+                        (now, f"{prefix}%"),
+                    )
+                    return [r[0] for r in cur.fetchall()]
+        except PersistenceError:
+            raise
+        except Exception as exc:
+            safe_msg = sanitize_persistence_error(exc)
+            logger.error("PostgreSQL KV list_keys failed: %s", safe_msg)
+            raise PersistenceError(f"PostgreSQL KV list_keys failed: {safe_msg}") from exc

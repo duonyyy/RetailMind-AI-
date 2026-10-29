@@ -1,4 +1,25 @@
+import re
 from typing import Protocol, Optional, Any, Dict, List, runtime_checkable
+
+from agent_platform.harness.guards.pii import PIIMasker
+
+_DSN_SECRET_REGEX = re.compile(
+    r"(?:postgres(?:ql)?|redis|rediss)://[^\s'\"<>]+|"
+    r"(?:password|passwd|pwd|secret|token)\s*=\s*[^\s,;'\"]+",
+    re.IGNORECASE,
+)
+
+
+class PersistenceError(RuntimeError):
+    """Raised when a durable persistence operation fails (fail-closed)."""
+
+
+def sanitize_persistence_error(exc: BaseException) -> str:
+    """Scrub connection strings, credentials, and PII from persistence exceptions."""
+    raw = f"{type(exc).__name__}: {exc}"
+    scrubbed = _DSN_SECRET_REGEX.sub("[REDACTED_DSN]", raw)
+    return PIIMasker.mask_text(scrubbed)
+
 
 @runtime_checkable
 class KVStorePort(Protocol):
