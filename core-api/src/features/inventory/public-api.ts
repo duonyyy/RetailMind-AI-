@@ -4,8 +4,6 @@ export {
   type StoreDTO,
   type StockDTO,
   type ReserveItemInput,
-  resolveStoreUuid,
-  resolveVariantUuid,
 } from './services/inventory.service';
 export { Inventory } from './entities/inventory.entity';
 export { Store } from './entities/store.entity';

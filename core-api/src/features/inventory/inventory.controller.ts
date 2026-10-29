@@ -38,10 +38,10 @@ export class InventoryController {
     @Body('variantId') variantId: string,
     @Body('quantity') quantity: number,
   ) {
-    await this.inventoryService.reserveStock(storeId, variantId, quantity || 1);
+    await this.inventoryService.reserveStock(storeId, variantId, quantity);
     return {
       status: 'success',
-      message: `Đã giữ chỗ thành công ${quantity || 1} sản phẩm tại kho.`,
+      message: `Đã giữ chỗ thành công ${quantity} sản phẩm tại kho.`,
     };
   }
 }

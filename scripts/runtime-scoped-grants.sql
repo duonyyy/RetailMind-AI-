@@ -12,4 +12,8 @@ GRANT INSERT ON public.users, public.orders, public.support_tickets, public.favo
   public.audit_events, public.auth_refresh_sessions TO retailmind_app_runtime;
 GRANT UPDATE ON public.inventory, public.auth_refresh_sessions TO retailmind_app_runtime;
 GRANT DELETE ON public.favorites TO retailmind_app_runtime;
+-- Checkout reads authoritative catalog data and persists its receipt atomically.
+GRANT SELECT ON public.brands, public.categories, public.products, public.order_items, public.idempotency_keys TO retailmind_app_runtime;
+GRANT INSERT ON public.order_items, public.idempotency_keys TO retailmind_app_runtime;
+GRANT UPDATE (target_id, response_payload) ON public.idempotency_keys TO retailmind_app_runtime;
 COMMIT;

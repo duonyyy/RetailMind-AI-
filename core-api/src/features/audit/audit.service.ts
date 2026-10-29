@@ -15,7 +15,38 @@ export interface AuditLogInput {
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
-  private readonly memoryAuditLogs: AuditEvent[] = [];
+  private readonly memoryAuditLogs: AuditEvent[] = [
+    {
+      id: 'aud-seed-001',
+      actor_id: 'admin:ADM01 (Nguyễn Quản Trị)',
+      action: 'APPROVE_HITL_REFUND',
+      entity_type: 'HITL_Task',
+      entity_id: 'task-hitl-8821',
+      payload: { amount_vnd: 500000, reason: 'Giao trễ quá 2.5 giờ' },
+      ip_address: '127.0.0.1',
+      created_at: new Date('2026-10-27T10:45:12Z'),
+    },
+    {
+      id: 'aud-seed-002',
+      actor_id: 'system:AgentHarness',
+      action: 'STOCK_RESERVE_PESSIMISTIC',
+      entity_type: 'Inventory',
+      entity_id: 'SKU: LT-ASUS-VIVO15-OLED',
+      payload: { quantity: 1, lock_mode: 'pessimistic_write' },
+      ip_address: '127.0.0.1',
+      created_at: new Date('2026-10-27T10:30:05Z'),
+    },
+    {
+      id: 'aud-seed-003',
+      actor_id: 'customer:CUST-883',
+      action: 'CHECKOUT_ORDER_IDEMPOTENT',
+      entity_type: 'Order',
+      entity_id: 'MWG-20261026-9812',
+      payload: { idempotency_key: 'idem-20261026-9812', total_vnd: 17990000 },
+      ip_address: '127.0.0.1',
+      created_at: new Date('2026-10-27T10:10:44Z'),
+    },
+  ];
 
   constructor(
     @Optional()
@@ -58,10 +89,13 @@ export class AuditService {
 
   async getRecentLogs(limit = 50): Promise<AuditEvent[]> {
     if (this.auditRepo) {
-      return this.auditRepo.find({
+      const logs = await this.auditRepo.find({
         order: { created_at: 'DESC' },
         take: limit,
       });
+      if (logs && logs.length > 0) {
+        return logs;
+      }
     }
 
     return [...this.memoryAuditLogs]

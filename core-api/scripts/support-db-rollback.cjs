@@ -36,7 +36,7 @@ async function main() {
   let createdTicket;
   try {
     await runner.connect();
-    await runner.startTransaction();
+    await runner.startTransaction('SERIALIZABLE');
     const q = (sql, params) => runner.query(sql, params);
     await q('INSERT INTO roles (id, code, name) VALUES ($1, $2, $3)', [role, `TEST_${suffix}`, 'Synthetic test']);
     for (const [id, email] of [[alice, `alice-${suffix}@example.invalid`], [bob, `bob-${suffix}@example.invalid`]]) {
@@ -46,7 +46,10 @@ async function main() {
     await q('INSERT INTO orders (id, customer_id, store_id, total_vnd, order_no) VALUES ($1,$2,$3,$4,$5)', [order, alice, store, 100000, `TEST-${suffix}`]);
     const repo = runner.manager.getRepository(SupportTicket);
     // Service calls the real TypeORM manager inside this already-open transaction.
-    const service = new SupportService(repo, { isInitialized: true, transaction: (fn) => fn(runner.manager) });
+    const service = new SupportService(repo, { isInitialized: true, transaction: (isolation, fn) => {
+      if (isolation !== 'SERIALIZABLE') throw new Error('Unexpected isolation');
+      return fn(runner.manager);
+    } });
     const dto = { orderId: order, title: 'Synthetic support', description: 'Synthetic issue', confirmedProfilePhone: '0912345678' };
     const result = await service.createTicket(alice, dto);
     createdTicket = result.id;

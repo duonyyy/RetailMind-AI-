@@ -50,13 +50,13 @@ export class SupportService {
       throw new ServiceUnavailableException('Không thể xác nhận dữ liệu hỗ trợ lúc này.');
     }
     try {
-      return await this.dataSource.transaction(async (manager) => {
-      const users = await manager.query('SELECT phone_number FROM users WHERE id = $1 AND is_active = true FOR SHARE', [customerId]);
+      return await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+      const users = await manager.query('SELECT phone_number FROM users WHERE id = $1 AND is_active = true', [customerId]);
       const phone = typeof users[0]?.phone_number === 'string' ? users[0].phone_number.replace(/\D/g, '') : '';
       if (phone.length < 9 || phone !== dto.confirmedProfilePhone!.replace(/\D/g, '')) {
         throw new BadRequestException('Số điện thoại hồ sơ không khả dụng hoặc đã thay đổi. Vui lòng kiểm tra và xác nhận lại.');
       }
-      const orders = await manager.query('SELECT id FROM orders WHERE customer_id = $1 AND (id::text = $2 OR order_no = $2) FOR SHARE', [customerId, dto.orderId.trim()]);
+      const orders = await manager.query('SELECT id FROM orders WHERE customer_id = $1 AND (id::text = $2 OR order_no = $2)', [customerId, dto.orderId.trim()]);
       if (!orders.length) throw new NotFoundException('Không tìm thấy đơn hàng.');
       const repo = manager.getRepository(SupportTicket);
       const saved = await repo.save(repo.create({

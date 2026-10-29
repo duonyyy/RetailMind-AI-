@@ -16,7 +16,10 @@ describe('Support ticket trusted boundary', () => {
     }),
     getRepository: () => repo,
   };
-  const db = { isInitialized: true, transaction: async (callback: any) => callback(manager) };
+  const db = { isInitialized: true, transaction: async (isolation: string, callback: any) => {
+    expect(isolation).toBe('SERIALIZABLE');
+    return callback(manager);
+  } };
   const service = new SupportService(repo as any, db as any);
 
   beforeEach(() => { saved.length = 0; manager.query.mockClear(); });

@@ -20,8 +20,10 @@ export class OrdersController {
   async preview(
     @Body('items') items: OrderItemInput[],
     @Body('discountCode') discountCode?: string,
+    @Body('storeId') storeId?: string,
+    @CurrentUser() user?: AuthenticatedUser,
   ) {
-    const calculation = await this.ordersService.calculatePreview(items, discountCode);
+    const calculation = await this.ordersService.calculatePreview(items, discountCode, storeId, user.id);
     return {
       status: 'success',
       data: calculation,

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Variant } from './entities/variant.entity';
@@ -143,102 +143,40 @@ export class CatalogService {
    * Hỗ trợ truy vấn PostgreSQL SSOT (unaccent) và fallback mượt về defaultLaptops khi chạy Unit Test.
    */
   async getProducts(filter: LaptopFilter = {}): Promise<RetailProductDTO[]> {
-    if (this.variantRepo) {
-      try {
-        const qb = this.variantRepo
-          .createQueryBuilder('v')
-          .where('v.is_active = :isActive', { isActive: true });
-
-        if (filter.search) {
-          qb.andWhere(
-            '(unaccent(v.name) ILIKE unaccent(:q) OR v.sku ILIKE :q OR v.cpu_model ILIKE :q)',
-            { q: `%${filter.search}%` },
-          );
-        }
-        if (filter.minRam) {
-          qb.andWhere('v.ram_gb >= :minRam', { minRam: filter.minRam });
-        }
-        if (filter.minPrice) {
-          qb.andWhere('v.price_vnd >= :minPrice', { minPrice: filter.minPrice });
-        }
-        if (filter.maxPrice) {
-          qb.andWhere('v.price_vnd <= :maxPrice', { maxPrice: filter.maxPrice });
-        }
-
-        const dbVariants = await qb.orderBy('v.price_vnd', 'ASC').getMany();
-        if (dbVariants.length > 0) {
-          return dbVariants.map((v) => this.mapVariantToDto(v));
-        }
-      } catch {
-        // Fallback to in-memory baseline when DB table is empty or offline
+    if (!this.variantRepo) throw new ServiceUnavailableException('Danh mục sản phẩm hiện không khả dụng.');
+    const qb = this.variantRepo.createQueryBuilder('v').where('v.is_active = :active', { active: true });
+    if (filter.search) qb.andWhere('(unaccent(v.name) ILIKE unaccent(:q) OR v.sku ILIKE :q OR v.cpu_model ILIKE :q)', { q: `%${filter.search}%` });
+    if (filter.minRam) qb.andWhere('v.ram_gb >= :minRam', { minRam: filter.minRam });
+    if (filter.minPrice) qb.andWhere('v.price_vnd >= :minPrice', { minPrice: filter.minPrice });
+    if (filter.maxPrice) qb.andWhere('v.price_vnd <= :maxPrice', { maxPrice: filter.maxPrice });
+    if (filter.brand || filter.category) {
+      qb.innerJoin('products', 'product', 'product.id = v.product_id');
+      if (filter.brand) {
+        qb.innerJoin('brands', 'brand', 'brand.id = product.brand_id');
+        qb.andWhere('lower(brand.name) = lower(:brand)', { brand: filter.brand });
+      }
+      if (filter.category) {
+        qb.innerJoin('categories', 'category', 'category.id = product.category_id');
+        qb.andWhere('lower(category.name) = lower(:category)', { category: filter.category });
       }
     }
-
-    let list = [...this.defaultLaptops];
-
-    if (filter.search) {
-      const q = filter.search.toLowerCase();
-      list = list.filter(
-        p =>
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          p.brand.toLowerCase().includes(q) ||
-          p.cpuModel.toLowerCase().includes(q),
-      );
-    }
-
-    if (filter.brand) {
-      list = list.filter(p => p.brand.toLowerCase() === filter.brand.toLowerCase());
-    }
-
-    if (filter.minRam) {
-      list = list.filter(p => p.ramGb >= filter.minRam);
-    }
-
-    if (filter.minPrice) {
-      const min = new Decimal(filter.minPrice);
-      list = list.filter(p => new Decimal(p.priceVnd).greaterThanOrEqualTo(min));
-    }
-
-    if (filter.maxPrice) {
-      const max = new Decimal(filter.maxPrice);
-      list = list.filter(p => new Decimal(p.priceVnd).lessThanOrEqualTo(max));
-    }
-
-    return list;
+    return (await qb.orderBy('v.price_vnd', 'ASC').getMany()).map(v => this.mapVariantToDto(v));
   }
 
   async getProductBySku(sku: string): Promise<RetailProductDTO> {
-    if (this.variantRepo) {
-      try {
-        const dbVariant = await this.variantRepo.findOne({
-          where: [{ sku }, { id: sku }],
-        });
-        if (dbVariant) {
-          return this.mapVariantToDto(dbVariant);
-        }
-      } catch {
-        // Fallback to in-memory baseline
-      }
-    }
-
-    const item = this.defaultLaptops.find(p => p.sku.toLowerCase() === sku.toLowerCase() || p.id === sku);
-    if (!item) {
-      throw new NotFoundException(`Không tìm thấy sản phẩm với mã SKU: ${sku}`);
-    }
-    return item;
+    if (!this.variantRepo) throw new ServiceUnavailableException('Danh mục sản phẩm hiện không khả dụng.');
+    const variant = await this.variantRepo.createQueryBuilder('v').where('v.is_active = true').andWhere('(v.sku = :sku OR v.id::text = :sku)', { sku }).getOne();
+    if (!variant) throw new NotFoundException('Không tìm thấy sản phẩm đang kinh doanh.');
+    return this.mapVariantToDto(variant);
   }
 
   async compareVariants(skuList: string[]): Promise<RetailProductDTO[]> {
-    const lowerList = skuList.map(s => s.toLowerCase());
-    return this.defaultLaptops.filter(
-      p => lowerList.includes(p.sku.toLowerCase()) || lowerList.includes(p.id.toLowerCase()),
-    );
+    return Promise.all(skuList.map(sku => this.getProductBySku(sku)));
   }
 
   private mapVariantToDto(v: Variant): RetailProductDTO {
     const priceStr = v.price_vnd ? v.price_vnd.toString() : '0';
-    const priceNum = new Decimal(priceStr).toNumber();
+    const priceNum = BigInt(priceStr);
     const fallbackMatch = this.defaultLaptops.find(
       (d) => d.sku.toLowerCase() === v.sku.toLowerCase(),
     );
