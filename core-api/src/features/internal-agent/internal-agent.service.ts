@@ -312,9 +312,11 @@ export class InternalAgentService {
     if (!targetId) {
       throw new BadRequestException('Mã đơn hàng là bắt buộc.');
     }
-    const principal = customerId && customerId !== 'guest_user'
-      ? { id: customerId, role: 'CUSTOMER' }
-      : { id: 'system', role: 'ADMIN' };
+    const requesterId = typeof customerId === 'string' ? customerId.trim() : '';
+    if (!requesterId || requesterId === 'guest_user') {
+      throw new BadRequestException('Danh tính khách hàng là bắt buộc để tra cứu đơn hàng.');
+    }
+    const principal = { id: requesterId, role: 'CUSTOMER' };
 
     const order = await this.ordersService.getOrder(targetId, principal);
     return {
@@ -341,9 +343,11 @@ export class InternalAgentService {
     if (!args.order_id) {
       throw new BadRequestException('Mã đơn hàng là bắt buộc.');
     }
-    const principal = customerId && customerId !== 'guest_user'
-      ? { id: customerId, role: 'CUSTOMER' }
-      : { id: 'system', role: 'ADMIN' };
+    const requesterId = typeof customerId === 'string' ? customerId.trim() : '';
+    if (!requesterId || requesterId === 'guest_user') {
+      throw new BadRequestException('Danh tính khách hàng là bắt buộc để hủy đơn hàng.');
+    }
+    const principal = { id: requesterId, role: 'CUSTOMER' };
 
     const reason = args.reason || 'Khách hàng yêu cầu hủy đơn qua tác tử AI';
     const result = await this.ordersService.cancelOrder(args.order_id, reason, principal);

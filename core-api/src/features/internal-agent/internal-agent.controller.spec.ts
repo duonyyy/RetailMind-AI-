@@ -297,7 +297,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
       expect(res.tool).toBe('get_order_status');
       expect(res.data.order_id).toBe('ORD-100201');
       expect(res.data.order_status).toBe('PLACED');
-      expect(mockOrdersService.getOrder).toHaveBeenCalled();
+      expect(mockOrdersService.getOrder).toHaveBeenCalledWith('ORD-100201', { id: 'cust-1', role: 'CUSTOMER' });
     });
 
     it('11. orderCancel should execute cancellation with inventory restoration', async () => {
@@ -306,7 +306,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
       expect(res.tool).toBe('cancel_simulated_order');
       expect(res.data.order_id).toBe('ORD-100201');
       expect(res.data.inventory_restored).toBe(true);
-      expect(mockOrdersService.cancelOrder).toHaveBeenCalled();
+      expect(mockOrdersService.cancelOrder).toHaveBeenCalledWith('ORD-100201', 'Đổi ý', { id: 'cust-1', role: 'CUSTOMER' });
     });
 
     it('12. ticketCreate should create support ticket via SupportService', async () => {
@@ -345,6 +345,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
         await expect(controller.cartView(undefined, undefined)).rejects.toThrow(BadRequestException);
         await expect(controller.cartAdd({ sku: 'ABC', quantity: 1 }, undefined)).rejects.toThrow(BadRequestException);
         await expect(controller.cartRemove({ sku: 'ABC' }, undefined)).rejects.toThrow(BadRequestException);
+        await expect(controller.orderStatus({ order_id: 'ORD-100201' }, undefined)).rejects.toThrow(BadRequestException);
         await expect(controller.orderCancel({ order_id: 'ORD-100201' }, undefined)).rejects.toThrow(BadRequestException);
         await expect(controller.ticketCreate({ title: 't', description: 'd' }, undefined)).rejects.toThrow(BadRequestException);
         await expect(controller.manageFavorite({ sku: 'ABC' }, undefined)).rejects.toThrow(BadRequestException);
@@ -353,9 +354,21 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
       it('rejects guest_user placeholder for customer-scoped operations', async () => {
         await expect(controller.cartView('guest_user', undefined)).rejects.toThrow(BadRequestException);
         await expect(controller.cartAdd({ sku: 'ABC', quantity: 1 }, 'guest_user')).rejects.toThrow(BadRequestException);
+        await expect(controller.orderStatus({ order_id: 'ORD-100201' }, 'guest_user')).rejects.toThrow(BadRequestException);
         await expect(controller.orderCancel({ order_id: 'ORD-100201' }, 'guest_user')).rejects.toThrow(BadRequestException);
         await expect(controller.ticketCreate({ title: 't', description: 'd' }, 'guest_user')).rejects.toThrow(BadRequestException);
         await expect(controller.manageFavorite({ sku: 'ABC' }, 'guest_user')).rejects.toThrow(BadRequestException);
+      });
+
+      it('rejects missing or guest identity in the service without calling the order service', async () => {
+        mockOrdersService.getOrder.mockClear();
+        mockOrdersService.cancelOrder.mockClear();
+        for (const customerId of [undefined, '', '   ', 'guest_user', ' guest_user ']) {
+          await expect(service.getOrderStatus({ order_id: 'ORD-100201' }, customerId)).rejects.toThrow(BadRequestException);
+          await expect(service.cancelOrder({ order_id: 'ORD-100201' }, customerId)).rejects.toThrow(BadRequestException);
+        }
+        expect(mockOrdersService.getOrder).not.toHaveBeenCalled();
+        expect(mockOrdersService.cancelOrder).not.toHaveBeenCalled();
       });
     });
   });

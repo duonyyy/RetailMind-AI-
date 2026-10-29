@@ -115,7 +115,7 @@ export class InternalAgentController {
     @Body() body: any,
     @Headers('x-customer-id') customerIdHeader?: string,
   ) {
-    const customerId = this.extractCustomerId(customerIdHeader, body?.customer_id);
+    const customerId = this.requireCustomerId(customerIdHeader, body?.customer_id, 'tra cứu đơn hàng');
     const res = await this.agentService.getOrderStatus(body || {}, customerId);
     return { status: 'success', tool: 'get_order_status', data: res };
   }
