@@ -5,10 +5,11 @@ import { OrderItem } from './entities/order-item.entity';
 import { SupportTicket } from './entities/support-ticket.entity';
 import { IdempotencyKey } from './entities/idempotency-key.entity';
 import { OrdersService } from './orders.service';
-import { OrdersController } from './orders.controller';
+import { OrdersController, AdminOrdersController } from './orders.controller';
 import { CatalogModule } from '../catalog/public-api';
 import { InventoryModule } from '../inventory/public-api';
 import { CartModule } from '../cart/public-api';
+import { AuditModule } from '../audit/public-api';
 
 const isDbEnabled = process.env.ENABLE_POSTGRES === 'true';
 
@@ -27,8 +28,9 @@ const isDbEnabled = process.env.ENABLE_POSTGRES === 'true';
     CatalogModule,
     InventoryModule,
     CartModule,
+    AuditModule,
   ],
-  controllers: [OrdersController],
+  controllers: [OrdersController, AdminOrdersController],
   providers: [OrdersService],
   exports: [OrdersService],
 })

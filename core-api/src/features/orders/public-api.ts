@@ -6,6 +6,7 @@ export {
   type CheckoutInputDTO,
   type OrderResultDTO,
 } from './orders.service';
+export { OrdersController, AdminOrdersController } from './orders.controller';
 export { Order } from './entities/order.entity';
 export { OrderItem } from './entities/order-item.entity';
 export { IdempotencyKey } from './entities/idempotency-key.entity';

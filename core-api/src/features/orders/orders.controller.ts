@@ -103,3 +103,36 @@ export class OrdersController {
     };
   }
 }
+
+@Roles('ADMIN')
+@Controller('admin/orders')
+export class AdminOrdersController {
+  constructor(private readonly ordersService: OrdersService) {}
+
+  @Get()
+  async getOrders(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+  ) {
+    const result = await this.ordersService.getOrders(user, {
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
+      status,
+    });
+    return {
+      status: 'success',
+      ...result,
+    };
+  }
+
+  @Get(':id')
+  async getOrder(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    const order = await this.ordersService.getOrder(id, user);
+    return {
+      status: 'success',
+      data: order,
+    };
+  }
+}

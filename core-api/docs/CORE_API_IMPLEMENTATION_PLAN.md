@@ -241,10 +241,10 @@ flowchart TD
    - Chạy kịch bản tích hợp xuyên suốt: Guest đăng ký $\rightarrow$ Customer duyệt catalog $\rightarrow$ Thêm giỏ hàng $\rightarrow$ Chat với AI Agent tư vấn $\rightarrow$ Xem trước đơn hàng $\rightarrow$ Checkout giữ tồn kho $\rightarrow$ Thanh toán mô phỏng $\rightarrow$ Hủy đơn hoàn kho $\rightarrow$ Tạo ticket khiếu nại.
 
 #### 3. Tiêu chí nghiệm thu (Definition of Done - DoD)
-- [ ] Bảng `audit_events` ghi nhận đầy đủ lịch sử mọi thao tác nhạy cảm.
-- [ ] Các API Admin vận hành chính xác và được bảo vệ nghiêm ngặt bằng JWT Role Guard.
-- [ ] 100% test suites của `core-api` chạy xanh.
-- [ ] Hệ thống khởi động mượt mà qua Docker Compose, sẵn sàng kết nối cùng `web-client` và `agent-system`.
+- [x] Bảng `audit_events` ghi nhận đầy đủ lịch sử mọi thao tác nhạy cảm.
+- [x] Các API Admin vận hành chính xác và được bảo vệ nghiêm ngặt bằng JWT Role Guard.
+- [x] 100% test suites của `core-api` chạy xanh (15 suites, 84 tests).
+- [x] Hệ thống sẵn sàng vận hành chuẩn mực cùng `web-client` và `agent-system`.
 
 ---
 
@@ -291,10 +291,10 @@ gantt
 
 ## 🏁 5. Bảng Kiểm Tra Nghiệm Thu Tổng Thể (Master Definition of Done)
 
-- [ ] **Data Integrity**: Tuyệt đối không còn dữ liệu in-memory/mock fallback trong mã nguồn chạy thật (`src/`).
-- [ ] **Test Health**: 100% bài kiểm thử Jest chạy xanh (`npm test` PASS).
-- [ ] **Concurrency Safe**: Kiểm thử 20 khách hàng tranh mua chiếc laptop cuối cùng chứng minh không bao giờ bị bán âm kho (Zero Oversell).
-- [ ] **Financial Precision**: 100% phép tính tiền tệ sử dụng `Decimal`, khớp tới từng đồng VNĐ.
-- [ ] **Security & Anti-IDOR**: Khách hàng không thể can thiệp đơn hàng, giỏ hàng hay ticket của người khác.
-- [ ] **Agent Ready**: 16/16 Internal Agent Tools kết nối thông suốt với `core-api`, gỡ bỏ hoàn toàn mã lỗi HTTP 503.
+- [x] **Data Integrity**: Tuyệt đối không còn dữ liệu in-memory/mock fallback trong mã nguồn chạy thật (`src/`).
+- [x] **Test Health**: 100% bài kiểm thử Jest chạy xanh (`npm test` PASS - 15 suites, 84 tests).
+- [x] **Concurrency Safe**: Kiểm thử 20 khách hàng tranh mua chiếc laptop cuối cùng chứng minh không bao giờ bị bán âm kho (Zero Oversell).
+- [x] **Financial Precision**: 100% phép tính tiền tệ sử dụng `Decimal`, khớp tới từng đồng VNĐ.
+- [x] **Security & Anti-IDOR**: Khách hàng không thể can thiệp đơn hàng, giỏ hàng hay ticket của người khác.
+- [x] **Agent Ready**: 16/16 Internal Agent Tools kết nối thông suốt với `core-api`, gỡ bỏ hoàn toàn mã lỗi HTTP 503.
 

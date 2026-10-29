@@ -1,6 +1,6 @@
 import { Injectable, Optional, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { AuditEvent } from './entities/audit-event.entity';
 
 export interface AuditLogInput {
@@ -12,41 +12,28 @@ export interface AuditLogInput {
   ipAddress?: string;
 }
 
+export interface AuditFilterDTO {
+  page?: number;
+  limit?: number;
+  action?: string;
+  entityType?: string;
+  actorId?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface PaginatedAuditLogs {
+  items: AuditEvent[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
-  private readonly memoryAuditLogs: AuditEvent[] = [
-    {
-      id: 'aud-seed-001',
-      actor_id: 'admin:ADM01 (Nguyễn Quản Trị)',
-      action: 'APPROVE_HITL_REFUND',
-      entity_type: 'HITL_Task',
-      entity_id: 'task-hitl-8821',
-      payload: { amount_vnd: 500000, reason: 'Giao trễ quá 2.5 giờ' },
-      ip_address: '127.0.0.1',
-      created_at: new Date('2026-10-27T10:45:12Z'),
-    },
-    {
-      id: 'aud-seed-002',
-      actor_id: 'system:AgentHarness',
-      action: 'STOCK_RESERVE_PESSIMISTIC',
-      entity_type: 'Inventory',
-      entity_id: 'SKU: LT-ASUS-VIVO15-OLED',
-      payload: { quantity: 1, lock_mode: 'pessimistic_write' },
-      ip_address: '127.0.0.1',
-      created_at: new Date('2026-10-27T10:30:05Z'),
-    },
-    {
-      id: 'aud-seed-003',
-      actor_id: 'customer:CUST-883',
-      action: 'CHECKOUT_ORDER_IDEMPOTENT',
-      entity_type: 'Order',
-      entity_id: 'MWG-20261026-9812',
-      payload: { idempotency_key: 'idem-20261026-9812', total_vnd: 17990000 },
-      ip_address: '127.0.0.1',
-      created_at: new Date('2026-10-27T10:10:44Z'),
-    },
-  ];
+  private readonly memoryAuditLogs: AuditEvent[] = [];
 
   constructor(
     @Optional()
@@ -57,9 +44,22 @@ export class AuditService {
   /**
    * Ghi nhận sự kiện kiểm toán bất biến (Append-Only)
    * Tuyệt đối không có hàm update hoặc delete!
+   * Hỗ trợ EntityManager trong cùng Transaction nếu được truyền vào.
    */
-  async logEvent(input: AuditLogInput): Promise<AuditEvent> {
+  async logEvent(input: AuditLogInput, manager?: EntityManager): Promise<AuditEvent> {
     this.logger.log(`[Audit] Action: ${input.action} on ${input.entityType} (Actor: ${input.actorId || 'system'})`);
+
+    if (manager) {
+      const event = manager.create(AuditEvent, {
+        actor_id: input.actorId,
+        action: input.action,
+        entity_type: input.entityType,
+        entity_id: input.entityId,
+        payload: input.payload,
+        ip_address: input.ipAddress,
+      });
+      return manager.save(event);
+    }
 
     if (this.auditRepo) {
       const event = this.auditRepo.create({
@@ -74,7 +74,7 @@ export class AuditService {
     }
 
     const event: AuditEvent = {
-      id: `aud-${Date.now()}`,
+      id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
       actor_id: input.actorId,
       action: input.action,
       entity_type: input.entityType,
@@ -87,20 +87,77 @@ export class AuditService {
     return event;
   }
 
-  async getRecentLogs(limit = 50): Promise<AuditEvent[]> {
+  async getLogs(filter: AuditFilterDTO = {}): Promise<PaginatedAuditLogs> {
+    const page = Math.max(1, filter.page || 1);
+    const limit = Math.max(1, Math.min(100, filter.limit || 20));
+    const skip = (page - 1) * limit;
+
     if (this.auditRepo) {
-      const logs = await this.auditRepo.find({
-        order: { created_at: 'DESC' },
-        take: limit,
-      });
-      if (logs && logs.length > 0) {
-        return logs;
+      const qb = this.auditRepo.createQueryBuilder('aud');
+
+      if (filter.action) {
+        qb.andWhere('aud.action = :action', { action: filter.action });
       }
+      if (filter.entityType) {
+        qb.andWhere('aud.entity_type = :entityType', { entityType: filter.entityType });
+      }
+      if (filter.actorId) {
+        qb.andWhere('aud.actor_id = :actorId', { actorId: filter.actorId });
+      }
+      if (filter.from) {
+        qb.andWhere('aud.created_at >= :from', { from: new Date(filter.from) });
+      }
+      if (filter.to) {
+        qb.andWhere('aud.created_at <= :to', { to: new Date(filter.to) });
+      }
+
+      qb.orderBy('aud.created_at', 'DESC');
+      qb.skip(skip).take(limit);
+
+      const [items, total] = await qb.getManyAndCount();
+      return {
+        items,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      };
     }
 
-    return [...this.memoryAuditLogs]
-      .reverse()
-      .slice(0, limit);
+    let filtered = [...this.memoryAuditLogs];
+    if (filter.action) {
+      filtered = filtered.filter((l) => l.action === filter.action);
+    }
+    if (filter.entityType) {
+      filtered = filtered.filter((l) => l.entity_type === filter.entityType);
+    }
+    if (filter.actorId) {
+      filtered = filtered.filter((l) => l.actor_id === filter.actorId);
+    }
+    if (filter.from) {
+      const fromTime = new Date(filter.from).getTime();
+      filtered = filtered.filter((l) => new Date(l.created_at).getTime() >= fromTime);
+    }
+    if (filter.to) {
+      const toTime = new Date(filter.to).getTime();
+      filtered = filtered.filter((l) => new Date(l.created_at).getTime() <= toTime);
+    }
+
+    filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const total = filtered.length;
+    const items = filtered.slice(skip, skip + limit);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  async getRecentLogs(limit = 50): Promise<AuditEvent[]> {
+    const res = await this.getLogs({ limit });
+    return res.items;
   }
 }
-

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { DataSource, EntityManager, QueryRunner } from 'typeorm';
 import { Inventory } from '../entities/inventory.entity';
+import { AuditService } from '../../audit/public-api';
 
 export interface StoreDTO { id: string; code: string; name: string; address: string; phone: string; }
 export interface StockDTO { storeId: string; storeName: string; variantId: string; onHandQty: number; reservedQty: number; availableQty: number; isAvailable: boolean; }
@@ -8,7 +9,10 @@ export interface ReserveItemInput { variantId: string; quantity: number; }
 
 @Injectable()
 export class InventoryService {
-  constructor(@Optional() private readonly dataSource?: DataSource) {}
+  constructor(
+    @Optional() private readonly dataSource?: DataSource,
+    @Optional() private readonly auditService?: AuditService,
+  ) {}
 
   private db(): DataSource {
     if (!this.dataSource?.isInitialized) throw new ServiceUnavailableException('Dữ liệu tồn kho hiện không khả dụng.');
@@ -74,13 +78,143 @@ export class InventoryService {
     }
   }
 
-  async reserveStock(storeId: string, variantId: string, quantity: number): Promise<void> {
+  async commitStockInTx(queryRunner: QueryRunner, storeId: string, items: ReserveItemInput[]): Promise<void> {
+    const store = await this.resolveStore(queryRunner.manager, storeId);
+    for (const item of [...items].sort((a, b) => a.variantId.localeCompare(b.variantId))) {
+      const inventory = await queryRunner.manager.createQueryBuilder(Inventory, 'inv').setLock('pessimistic_write')
+        .where('inv.store_id = :storeId AND inv.variant_id = :variantId', { storeId: store.id, variantId: item.variantId }).getOne();
+      if (inventory) {
+        inventory.reserved_qty = Math.max(0, inventory.reserved_qty - item.quantity);
+        inventory.on_hand_qty = Math.max(0, inventory.on_hand_qty - item.quantity);
+        await queryRunner.manager.save(inventory);
+      }
+    }
+  }
+
+  async adjustInventory(
+    storeId: string,
+    variantId: string,
+    newOnHandQty: number,
+    reason: string,
+    actorId = 'admin',
+  ): Promise<{
+    storeId: string;
+    storeCode: string;
+    variantId: string;
+    sku: string;
+    onHandQty: number;
+    reservedQty: number;
+    availableQty: number;
+    reason: string;
+  }> {
+    if (typeof newOnHandQty !== 'number' || !Number.isSafeInteger(newOnHandQty) || newOnHandQty < 0) {
+      throw new BadRequestException('Số lượng tồn kho mới phải là số nguyên không âm (>= 0).');
+    }
+    if (!reason?.trim()) {
+      throw new BadRequestException('Cần cung cấp lý do điều chỉnh tồn kho.');
+    }
+
     const runner = this.db().createQueryRunner();
     await runner.connect();
     try {
       await runner.startTransaction();
-      try { await this.reserveMultipleWithLock(runner, storeId, [{ variantId, quantity }]); await runner.commitTransaction(); }
-      catch (error) { await runner.rollbackTransaction(); throw error; }
-    } finally { await runner.release(); }
+      try {
+        const store = await this.resolveStore(runner.manager, storeId);
+        const variant = await this.resolveVariant(runner.manager, variantId);
+
+        const inventory = await runner.manager
+          .createQueryBuilder(Inventory, 'inv')
+          .setLock('pessimistic_write')
+          .where('inv.store_id = :storeId AND inv.variant_id = :variantId', {
+            storeId: store.id,
+            variantId: variant.id,
+          })
+          .getOne();
+
+        if (!inventory) {
+          throw new NotFoundException('Không tìm thấy dữ liệu tồn kho tại cửa hàng.');
+        }
+
+        if (newOnHandQty < inventory.reserved_qty) {
+          throw new ConflictException(
+            `Số lượng tồn kho mới (${newOnHandQty}) không được nhỏ hơn số lượng đang giữ chỗ (${inventory.reserved_qty}).`,
+          );
+        }
+
+        const beforeOnHand = inventory.on_hand_qty;
+        inventory.on_hand_qty = newOnHandQty;
+        await runner.manager.save(inventory);
+
+        if (this.auditService) {
+          await this.auditService.logEvent(
+            {
+              actorId,
+              action: 'INVENTORY_ADJUST',
+              entityType: 'Inventory',
+              entityId: `${store.id}:${variant.id}`,
+              payload: {
+                storeId: store.id,
+                storeCode: store.code,
+                variantId: variant.id,
+                sku: variant.sku,
+                beforeOnHand,
+                newOnHand: newOnHandQty,
+                reservedQty: inventory.reserved_qty,
+                availableQty: newOnHandQty - inventory.reserved_qty,
+                reason: reason.trim(),
+              },
+            },
+            runner.manager,
+          );
+        }
+
+        await runner.commitTransaction();
+
+        return {
+          storeId: store.id,
+          storeCode: store.code,
+          variantId: variant.id,
+          sku: variant.sku,
+          onHandQty: inventory.on_hand_qty,
+          reservedQty: inventory.reserved_qty,
+          availableQty: inventory.on_hand_qty - inventory.reserved_qty,
+          reason: reason.trim(),
+        };
+      } catch (error) {
+        await runner.rollbackTransaction();
+        throw error;
+      }
+    } finally {
+      await runner.release();
+    }
+  }
+
+  async reserveStock(storeId: string, variantId: string, quantity: number, actorId = 'admin'): Promise<void> {
+    const runner = this.db().createQueryRunner();
+    await runner.connect();
+    try {
+      await runner.startTransaction();
+      try {
+        await this.reserveMultipleWithLock(runner, storeId, [{ variantId, quantity }]);
+        if (this.auditService) {
+          await this.auditService.logEvent(
+            {
+              actorId,
+              action: 'INVENTORY_RESERVE',
+              entityType: 'Inventory',
+              entityId: `${storeId}:${variantId}`,
+              payload: { storeId, variantId, quantity },
+            },
+            runner.manager,
+          );
+        }
+        await runner.commitTransaction();
+      } catch (error) {
+        await runner.rollbackTransaction();
+        throw error;
+      }
+    } finally {
+      await runner.release();
+    }
   }
 }

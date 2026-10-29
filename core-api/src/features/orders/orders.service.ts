@@ -12,6 +12,7 @@ import Decimal from 'decimal.js';
 import { CatalogService } from '../catalog/public-api';
 import { InventoryService } from '../inventory/public-api';
 import { CartService } from '../cart/public-api';
+import { AuditService } from '../audit/public-api';
 import { PreviewTokenHelper } from './helpers/preview-token.helper';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
@@ -77,6 +78,7 @@ export class OrdersService {
     private readonly inventoryService: InventoryService,
     @Optional() private readonly dataSource?: DataSource,
     @Optional() private readonly cartService?: CartService,
+    @Optional() private readonly auditService?: AuditService,
   ) {}
 
   private db(): DataSource {
@@ -246,6 +248,25 @@ export class OrdersService {
         idem.targetId = order.id;
         idem.responsePayload = { ...result, _requestHash: requestHash };
         await runner.manager.save(idem);
+
+        if (this.auditService) {
+          await this.auditService.logEvent(
+            {
+              actorId: customerId,
+              action: 'ORDER_PLACED',
+              entityType: 'Order',
+              entityId: order.id,
+              payload: {
+                orderNo,
+                storeId: store.id,
+                totalVnd: preview.totalVnd,
+                itemsCount: preview.items.length,
+              },
+            },
+            runner.manager,
+          );
+        }
+
         await runner.commitTransaction();
 
         // 3. Auto-clear active cart for customer
@@ -405,6 +426,23 @@ export class OrdersService {
         order.status = 'cancelled';
         order.cancelled_at = new Date();
         await runner.manager.save(order);
+
+        if (this.auditService) {
+          await this.auditService.logEvent(
+            {
+              actorId: principal.id,
+              action: 'ORDER_CANCEL',
+              entityType: 'Order',
+              entityId: order.id,
+              payload: {
+                orderNo: order.order_no,
+                reason,
+              },
+            },
+            runner.manager,
+          );
+        }
+
         await runner.commitTransaction();
 
         return {
@@ -458,12 +496,40 @@ export class OrdersService {
           throw new ConflictException('Đơn hàng đã được thanh toán trước đó.');
         }
 
+        const items = await runner.manager.find(OrderItem, { where: { order_id: order.id } });
+        if (items.length) {
+          await this.inventoryService.commitStockInTx(
+            runner,
+            order.store_id,
+            items.map((it) => ({ variantId: it.variant_id, quantity: it.quantity })),
+          );
+        }
+
         order.status = 'completed';
         order.updated_at = new Date();
         await runner.manager.save(order);
-        await runner.commitTransaction();
 
         const paymentRef = `SIM_PAY_${order.order_no}`;
+
+        if (this.auditService) {
+          await this.auditService.logEvent(
+            {
+              actorId: principal.id,
+              action: 'ORDER_PAYMENT',
+              entityType: 'Order',
+              entityId: order.id,
+              payload: {
+                orderNo: order.order_no,
+                paymentRef,
+                totalVnd: String(order.total_vnd),
+              },
+            },
+            runner.manager,
+          );
+        }
+
+        await runner.commitTransaction();
+
         const totalNum = BigInt(order.total_vnd ? order.total_vnd.toString() : '0');
 
         return {
