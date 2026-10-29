@@ -67,10 +67,9 @@ def build_orchestration_graph(
 
     # 6. Conditional routing from critic (True reflection cycle)
     def route_after_critic(state: AgentState) -> Literal["finalize", "agent", "abstain"]:
-        score = state.get("grounding_score", 0.0)
         cycles = state.get("critic_cycles", 0)
 
-        if score >= pack.limits.grounding_threshold:
+        if state.get("grounding_status") in ("exact_quote", "not_applicable"):
             return "finalize"
         if cycles < pack.limits.max_critic_cycles:
             return "agent"

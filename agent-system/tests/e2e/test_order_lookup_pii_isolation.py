@@ -257,12 +257,11 @@ class TestOrderLookupPIIIsolationE2E:
             )
 
             # ---------------------------------------------------------------
-            # 5. Verification of Accurate Final Answer
+            # 5. Unverified free-form claims are withheld while PII stays masked.
             # ---------------------------------------------------------------
-            assert final_state["status"] == "done"
+            assert final_state["status"] == "abstained"
             final_answer = final_state.get("final_answer", "")
-            assert "ORD-100201" in final_answer
-            assert "giao thành công" in final_answer.lower() or "17.990.000" in final_answer
+            assert "ORD-100201" not in final_answer
             assert CUSTOMER_ALICE["phone"] not in final_answer
 
         asyncio.run(_run())

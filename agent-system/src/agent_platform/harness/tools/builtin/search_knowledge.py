@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from agent_platform.harness.tools.spec import tool, ToolContext
+from agent_platform.harness.tools.spec import tool, ToolContext, ToolUnavailableError
 
 class SearchKnowledgeInput(BaseModel):
     query: str = Field(..., description="Nội dung hoặc câu hỏi cần tra cứu trong kho tri thức")
@@ -16,16 +16,4 @@ class SearchKnowledgeInput(BaseModel):
 )
 async def search_knowledge(args: SearchKnowledgeInput, ctx: ToolContext) -> Dict[str, Any]:
     """Connects to RAG retrieval engine to fetch relevant factual context."""
-    # In live system, ctx.http_client or shared retriever will be invoked
-    # Fallback default knowledge mock for self-contained execution
-    return {
-        "query": args.query,
-        "results": [
-            {
-                "chunk_id": "doc_kb_001",
-                "source": "quy_dinh_dich_vu.md",
-                "content": f"Tài liệu quy định chi tiết về '{args.query}'. Khách hàng được hỗ trợ đổi trả trong 14 ngày và xử lý yêu cầu theo hạn mức quy định.",
-                "relevance_score": 0.92,
-            }
-        ]
-    }
+    raise ToolUnavailableError("Chưa thể xác minh tài liệu chính sách đang được công bố. Vui lòng thử lại sau.")

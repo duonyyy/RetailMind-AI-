@@ -108,8 +108,7 @@ async def chat_stream_endpoint(
 
         if state.get("critic_cycles", 0) > 0:
             cycles = state.get("critic_cycles", 1)
-            score = state.get("grounding_score", 0.95) or 0.95
-            yield f"data: {json.dumps({'type': 'thought', 'content': f'Critic Verifier: Hoàn tất chu kỳ phản tư số {cycles}. Điểm đối soát Grounding: {score:.2f}.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought', 'content': f'Đã kiểm tra căn cứ (chu kỳ {cycles}).'})}\n\n"
 
         # Check HITL Gate requirement
         is_hitl = state.get("status") == "awaiting_approval"
@@ -148,18 +147,18 @@ async def chat_stream_endpoint(
                 f"Do số tiền vượt quá hạn mức tự động 200.000 VNĐ, hệ thống đã chuyển tác vụ (Mã: {app_req.approval_id}) "
                 f"vào hàng đợi phê duyệt của Quản lý cửa hàng (HITL Gate). Vui lòng chờ phản hồi trong vòng 24 giờ."
             )
-            yield f"data: {json.dumps({'type': 'answer', 'content': answer_text, 'grounding_score': 0.95})}\n\n"
+            yield f"data: {json.dumps({'type': 'answer', 'content': answer_text, 'grounding_score': None})}\n\n"
             yield "data: [DONE]\n\n"
             return
 
         # Emit citations if evidence was collected
-        evidence_list = state.get("evidence", [])
+        evidence_list = state.get("matched_evidence", []) if state.get("status") == "done" else []
         citations_data = []
         for ev in evidence_list:
             citations_data.append({
                 "title": ev.source_document if ev.source_document != "knowledge_store" else f"{harness.pack.name.replace('_', ' ').title()} Knowledge Base",
-                "statute": "Chính sách tham chiếu",
-                "page": 1,
+                "document_version_id": ev.document_version_id,
+                "chunk_id": ev.chunk_id,
                 "content": ev.content_snippet,
                 "snippet": ev.content_snippet[:200] if ev.content_snippet else "",
             })
@@ -168,7 +167,7 @@ async def chat_stream_endpoint(
 
         # Emit final answer
         final_ans = state.get("final_answer") or "Yêu cầu của bạn đã được ghi nhận."
-        grounding = state.get("grounding_score", 0.95) or 0.95
+        grounding = state.get("grounding_score")
         yield f"data: {json.dumps({'type': 'answer', 'content': final_ans, 'grounding_score': grounding})}\n\n"
 
         # Terminating frame
@@ -223,7 +222,7 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request, principal
     requires_approval = state.get("status") == "awaiting_approval"
     citations_data = [
         {"title": ev.source_document, "content": ev.content_snippet}
-        for ev in state.get("evidence", [])
+        for ev in (state.get("matched_evidence", []) if state.get("status") == "done" else [])
     ]
     thoughts = [
         f"Agent: Executed tool [{ev.tool_name}] ({ev.execution_time_ms:.1f}ms)"
@@ -234,7 +233,7 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request, principal
         "status": "error" if state.get("status") in ("abstained", "failed") else "success",
         "session_id": thread_id,
         "final_answer": state.get("final_answer") or "Yêu cầu đã được tiếp nhận.",
-        "grounding_score": state.get("grounding_score", 0.95) or 0.95,
+        "grounding_score": state.get("grounding_score"),
         "citations": citations_data,
         "requires_human_approval": requires_approval,
         "thought_trace": thoughts,

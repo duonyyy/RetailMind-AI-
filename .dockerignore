@@ -14,5 +14,7 @@ dist
 **/__pycache__
 **/*.pyc
 .pytest_cache
+**/.test-rag-work
+**/.audit-tmp
 .coverage
 *.log

@@ -68,16 +68,8 @@ def create_tool_exec_node(executor: ToolExecutor):
                 unavailable_message = masked_output_str
                 break
 
-            # Extract evidence if read-only lookup or knowledge retrieval
-            spec = executor.registry.get(tool_name)
-            is_lookup = (spec and not spec.side_effect) or tool_name == "search_knowledge"
-            if is_lookup and not result.is_error:
-                new_evidence.append(Evidence(
-                    chunk_id=f"ev_{call_id}",
-                    source_document=tool_name if tool_name != "search_knowledge" else "knowledge_store",
-                    content_snippet=masked_output_str[:400],
-                    score=1.0,
-                ))
+            # Tool output alone is not a verified document version or a citation.
+            # A future retrieval adapter must attach server-verified provenance.
 
         updates: Dict[str, Any] = {
             "messages": tool_messages,

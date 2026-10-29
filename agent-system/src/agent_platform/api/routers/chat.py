@@ -36,7 +36,7 @@ async def chat_endpoint(
         thread_id=thread_id,
     )
 
-    citations = [ev.source_document for ev in state.get("evidence", [])]
+    citations = [ev.source_document for ev in (state.get("matched_evidence", []) if state.get("status") == "done" else [])]
     return ChatResponse(
         thread_id=state["thread_id"],
         run_id=state["run_id"],
@@ -69,7 +69,7 @@ async def chat_stream_endpoint(
         if state.get("final_answer"):
             yield format_sse_event("answer.final", {"text": state["final_answer"]})
 
-        citations = [ev.source_document for ev in state.get("evidence", [])]
+        citations = [ev.source_document for ev in (state.get("matched_evidence", []) if state.get("status") == "done" else [])]
         if citations:
             yield format_sse_event("citations", {"sources": list(dict.fromkeys(citations))})
 

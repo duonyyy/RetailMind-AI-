@@ -36,6 +36,8 @@ class OrchestratorRunner:
             "pending_tool_calls": [],
             "final_answer": None,
             "grounding_score": None,
+            "grounding_status": None,
+            "matched_evidence": [],
             "memory_context": memory_context,
             "status": "running",
         }

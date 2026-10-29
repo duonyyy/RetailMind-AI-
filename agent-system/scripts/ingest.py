@@ -97,18 +97,18 @@ def ingest_domain(domain_name: str, max_files: int = 25) -> Dict[str, Any]:
         corpus=chunk_records,
         collection_name=f"{domain_name}_policies",
     )
-    upserted = len(retriever.doc_vectors)
+    local_vectors = len(retriever.doc_vectors)
 
     print("\nCorpus Ingestion Summary:")
     print(f"  • Files Processed : {total_files}")
     print(f"  • Chunks Created   : {total_chunks}")
-    print(f"  • Qdrant Upserted  : {upserted} vectors")
-    print(f"  • Vector Ready     : Primary dense + sparse BM25 indices synchronized.")
-    print("✓ Ingestion completed successfully.")
+    print(f"  • Local vectors    : {local_vectors}")
+    print("  • Qdrant indexing  : NOT VERIFIED (local vector count is not an upsert acknowledgement)")
     return {
         "files_processed": total_files,
         "chunks_created": total_chunks,
-        "vectors_upserted": upserted,
+        "vectors_upserted": None,
+        "local_vectors": local_vectors,
         "retriever": retriever,
     }
 

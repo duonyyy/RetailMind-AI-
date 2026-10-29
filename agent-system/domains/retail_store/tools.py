@@ -23,7 +23,7 @@ from agent_platform.harness.tools.spec import tool, ToolContext, ToolUnavailable
 from agent_platform.rag.retrieval.hybrid_engine import ProductionHybridRetriever as PlatformHybridRetriever
 
 logger = logging.getLogger("retail_store.tools")
-NESTJS_BACKEND_URL = os.getenv("NESTJS_BACKEND_URL", "http://localhost:3001")
+NESTJS_BACKEND_URL = os.getenv("NESTJS_BACKEND_URL", "http://localhost:4000")
 INTERNAL_TOOL_SECRET = os.getenv("INTERNAL_TOOL_SECRET", "secret_token_internal_retailmind")
 
 # ---------------------------------------------------------------------------

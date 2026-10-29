@@ -17,6 +17,7 @@ dist/
 **/.next/
 out/
 build/
+*.tsbuildinfo
 
 # Testing & Coverage
 .pytest_cache/
@@ -24,6 +25,8 @@ coverage/
 .coverage
 htmlcov/
 *.log
+.test-rag-work/
+**/.test-rag-work/
 
 # Environment & Secrets (Never commit secrets)
 .env

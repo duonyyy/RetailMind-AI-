@@ -53,10 +53,11 @@ def test_chat_stream_laptop_inquiry():
     assert "thought" in event_types
     assert "answer" in event_types
 
-    # Verify that the answer mentions laptops under 20M
+    # Without verified evidence, the answer must not assert catalog facts.
     answer_event = next(e for e in events if e.get("type") == "answer")
-    assert "Vivobook" in answer_event["content"] or "Dell" in answer_event["content"] or "Lenovo" in answer_event["content"] or "laptop" in answer_event["content"].lower()
-    assert answer_event.get("grounding_score") is not None
+    assert "chưa có đủ tài liệu" in answer_event["content"].lower()
+    assert answer_event.get("grounding_score") is None
+    assert "citations" not in event_types
 
 
 def test_chat_stream_return_policy_inquiry():
@@ -80,7 +81,9 @@ def test_chat_stream_return_policy_inquiry():
     assert "answer" in event_types
 
     answer_event = next(e for e in events if e.get("type") == "answer")
-    assert "30 ngày" in answer_event["content"] or "đổi trả" in answer_event["content"].lower()
+    assert "chưa có đủ tài liệu" in answer_event["content"].lower()
+    assert answer_event.get("grounding_score") is None
+    assert "citations" not in event_types
 
 
 def test_chat_stream_hitl_escalation_for_high_refund():
@@ -188,7 +191,7 @@ def test_sync_chat_endpoint():
     )
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "success"
+    assert data["status"] == "error"
     assert "final_answer" in data
     assert "grounding_score" in data
     assert isinstance(data["thought_trace"], list)

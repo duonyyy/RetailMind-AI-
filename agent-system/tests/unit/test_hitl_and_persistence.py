@@ -107,8 +107,7 @@ def test_langgraph_durable_checkpointer_integration():
         executor = ToolExecutor(registry, policy_engine)
 
         llm = ScriptedLLM()
-        llm.queue_tool_call("search_knowledge", {"query": "chào hỏi"}, call_id="call_hi")
-        llm.queue_answer("Xin chào, tôi có thể hỗ trợ gì cho bạn?")
+        llm.queue_answer("Xin chào!")
 
         graph = build_agent_graph(pack, llm, registry, executor, checkpointer=checkpointer)
 

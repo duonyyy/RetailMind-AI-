@@ -10,7 +10,9 @@ class Evidence(BaseModel):
     chunk_id: str
     source_document: str
     content_snippet: str
-    score: float = 1.0
+    score: Optional[float] = None
+    source_verified: bool = False
+    document_version_id: Optional[str] = None
 
 class ToolEvent(BaseModel):
     tool_name: str
@@ -50,5 +52,7 @@ class AgentState(TypedDict):
     # Final outputs and termination status
     final_answer: Optional[str]
     grounding_score: Optional[float]
+    grounding_status: Optional[str]
+    matched_evidence: List[Evidence]
     memory_context: Optional[str]
     status: Literal["running", "awaiting_approval", "done", "abstained", "failed"]

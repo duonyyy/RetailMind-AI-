@@ -23,8 +23,8 @@ def setup_test_environment():
 
     return pack, registry, executor
 
-def test_graph_flow_with_knowledge_retrieval_and_citations():
-    """Scenario 1: Happy path where agent calls tool, receives evidence, passes critic."""
+def test_graph_refuses_unavailable_knowledge_without_citations():
+    """Unavailable knowledge must not turn mock content into citations."""
     async def _run():
         pack, registry, executor = setup_test_environment()
 
@@ -44,19 +44,17 @@ def test_graph_flow_with_knowledge_retrieval_and_citations():
         principal = Principal(user_id="user_test", role="customer")
         final_state = await runner.execute("Chính sách đổi trả thế nào?", principal)
 
-        assert final_state["status"] == "done"
-        assert len(final_state["evidence"]) == 1
-        assert "14 ngày" in final_state["final_answer"]
-        assert "Nguồn trích dẫn:" in final_state["final_answer"]
-        assert final_state["grounding_score"] >= 0.75
+        assert final_state["status"] == "abstained"
+        assert final_state["evidence"] == []
+        assert "14 ngày" not in final_state["final_answer"]
+        assert "Nguồn trích dẫn:" not in final_state["final_answer"]
+        assert final_state["grounding_score"] is None
 
     asyncio.run(_run())
 
 def test_graph_true_critic_reflection_loop():
     """
-    Scenario 2: True reflection cycle:
-    Turn 1: LLM hallucination without evidence -> Critic rejects (<0.75) and loops back.
-    Turn 2: LLM listens to feedback, calls search_knowledge, passes critic -> finalized!
+    Critic asks for evidence, then an unavailable retrieval stops the workflow.
     """
     async def _run():
         pack, registry, executor = setup_test_environment()
@@ -81,10 +79,9 @@ def test_graph_true_critic_reflection_loop():
         principal = Principal(user_id="user_test", role="customer")
         final_state = await runner.execute("Tôi được đổi trả thế nào?", principal)
 
-        # Verified that critic loop executed at least once and then succeeded
-        assert final_state["critic_cycles"] >= 2
-        assert final_state["status"] == "done"
-        assert "14 ngày" in final_state["final_answer"]
+        assert final_state["critic_cycles"] >= 1
+        assert final_state["status"] == "abstained"
+        assert "14 ngày" not in final_state["final_answer"]
 
     asyncio.run(_run())
 
