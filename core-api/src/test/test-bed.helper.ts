@@ -207,12 +207,23 @@ export function createMockVariantQueryBuilder(variants: Variant[] = MOCK_VARIANT
       return qb;
     }),
     innerJoin: jest.fn().mockReturnThis(),
+    leftJoin: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockImplementation(() => {
       list.sort((a, b) => new Decimal(a.price_vnd).minus(new Decimal(b.price_vnd)).toNumber());
       return qb;
     }),
     getMany: jest.fn().mockImplementation(async () => [...list]),
     getOne: jest.fn().mockImplementation(async () => (list.length > 0 ? list[0] : null)),
+    getRawAndEntities: jest.fn().mockImplementation(async () => ({
+      entities: [...list],
+      raw: list.map((v) => ({
+        product_name: v.name,
+        product_slug: v.sku.toLowerCase(),
+        brand_name: 'Asus',
+        category_name: 'Laptop Học tập - Văn phòng',
+      })),
+    })),
   };
   return qb;
 }
