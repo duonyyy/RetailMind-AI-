@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ServiceUnavailableException,
   Optional,
 } from '@nestjs/common';
 import { CatalogService } from '../catalog/public-api';
@@ -13,29 +14,8 @@ import { CustomersService } from '../customers/public-api';
 import { CartService } from '../cart/public-api';
 import Decimal from 'decimal.js';
 
-export interface CartItemRecord {
-  sku: string;
-  name: string;
-  quantity: number;
-  unitPriceVnd: string;
-}
-
-export interface SupportTicketRecord {
-  id: string;
-  orderId: string;
-  customerId: string;
-  title: string;
-  description: string;
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED';
-  createdAt: string;
-}
-
 @Injectable()
 export class InternalAgentService {
-  // In-memory mock storage for session carts and customer tickets
-  private carts: Map<string, CartItemRecord[]> = new Map();
-  private tickets: Map<string, SupportTicketRecord> = new Map();
-
   constructor(
     private readonly catalogService: CatalogService,
     private readonly inventoryService: InventoryService,
@@ -126,18 +106,15 @@ export class InternalAgentService {
     if (!targetSku) {
       throw new BadRequestException('Mã SKU hoặc variant_id là bắt buộc.');
     }
-    const stores = await this.inventoryService.getStores();
-    const targetStore = args.store_id
-      ? stores.find((s) => s.id === args.store_id || s.code === args.store_id) || stores[0]
-      : stores[0];
-
-    const stock = await this.inventoryService.getStock(targetStore.id, targetSku);
+    const storeRef = args.store_id || 'MWG_HCM_001';
+    const stock = await this.inventoryService.getStock(storeRef, targetSku);
     return {
       sku: targetSku,
-      store_code: targetStore.code,
-      store_name: targetStore.name,
-      address: targetStore.address,
+      store_id: stock.storeId,
+      store_code: storeRef,
+      store_name: stock.storeName,
       on_hand_qty: stock.onHandQty,
+      reserved_qty: stock.reservedQty,
       available_qty: stock.availableQty,
       is_in_stock: stock.isAvailable,
       reservation_guarantee:
@@ -193,210 +170,192 @@ export class InternalAgentService {
   }
 
   /**
-  * Tool 6: Xem giỏ hàng của khách hàng
-  */
+   * Tool 6: Xem giỏ hàng của khách hàng (PostgreSQL SSOT)
+   */
   async viewCart(customerId: string) {
-    if (this.cartService) {
-      try {
-        const cart = await this.cartService.getCart(customerId);
-        return {
-          customer_id: customerId,
-          total_items: cart.itemsCount,
-          subtotal_vnd: cart.subtotalVnd,
-          formatted_subtotal: cart.formattedTotal,
-          items: cart.items.map((i) => ({
-            sku: i.sku,
-            name: i.name,
-            quantity: i.quantity,
-            unitPriceVnd: i.unitPriceVnd,
-          })),
-        };
-      } catch {
-        // Fallback to memory
-      }
+    if (!customerId || customerId === 'guest_user') {
+      throw new BadRequestException('Mã khách hàng là bắt buộc để xem giỏ hàng.');
     }
-    const items = this.carts.get(customerId) || [];
-    let subtotal = new Decimal(0);
-    for (const item of items) {
-      subtotal = subtotal.plus(new Decimal(item.unitPriceVnd).times(item.quantity));
+    if (!this.cartService) {
+      throw new ServiceUnavailableException('Dịch vụ giỏ hàng hiện không khả dụng.');
     }
+    const cart = await this.cartService.getCart(customerId);
     return {
+      status: 'success',
       customer_id: customerId,
-      total_items: items.reduce((acc, it) => acc + it.quantity, 0),
-      subtotal_vnd: subtotal.toString(),
-      formatted_subtotal: `${new Intl.NumberFormat('vi-VN').format(subtotal.toNumber())} ₫`,
-      items,
+      total_items: cart.itemsCount,
+      subtotal_vnd: cart.subtotalVnd,
+      total_vnd: cart.totalVnd,
+      vat_vnd: cart.vatVnd,
+      formatted_subtotal: cart.formattedTotal,
+      items: cart.items.map((i) => ({
+        sku: i.sku,
+        name: i.name,
+        quantity: i.quantity,
+        unit_price_vnd: i.unitPriceVnd,
+        formatted_unit_price: i.formattedUnitPrice,
+        line_total_vnd: i.lineTotalVnd,
+        formatted_line_total: i.formattedLineTotal,
+        available_stock: i.availableStock,
+        in_stock: i.inStock,
+      })),
     };
   }
 
   /**
-   * Tool 7: Thêm sản phẩm vào giỏ hàng
+   * Tool 7: Thêm sản phẩm vào giỏ hàng (PostgreSQL SSOT)
    */
   async addToCart(
     customerId: string,
     args: { sku?: string; variant_id?: string; quantity?: number; store_id?: string },
   ) {
+    if (!customerId || customerId === 'guest_user') {
+      throw new BadRequestException('Mã khách hàng là bắt buộc để thêm vào giỏ hàng.');
+    }
     const targetSku = args.sku || args.variant_id;
     if (!targetSku) {
       throw new BadRequestException('Mã SKU hoặc variant_id là bắt buộc.');
     }
     const qty = args.quantity && args.quantity > 0 ? args.quantity : 1;
-    if (this.cartService) {
-      try {
-        await this.cartService.addItem(customerId, { sku: targetSku, quantity: qty, storeId: args.store_id });
-        return {
-          status: 'success',
-          message: `Đã thêm ${qty} sản phẩm [${targetSku}] vào giỏ hàng.`,
-          cart: await this.viewCart(customerId),
-        };
-      } catch (err: any) {
-        if (err.status === 400 || err.status === 404 || err.status === 409) {
-          throw err;
-        }
-      }
+    if (!this.cartService) {
+      throw new ServiceUnavailableException('Dịch vụ giỏ hàng hiện không khả dụng.');
     }
 
-    const product = await this.catalogService.getProductBySku(targetSku);
-    if (!product) {
-      throw new NotFoundException(`Sản phẩm ${targetSku} không tồn tại trong danh mục.`);
-    }
-
-    const currentItems = this.carts.get(customerId) || [];
-    const existing = currentItems.find((it) => it.sku === targetSku);
-    if (existing) {
-      existing.quantity += qty;
-    } else {
-      currentItems.push({
-        sku: targetSku,
-        name: product.name,
-        quantity: qty,
-        unitPriceVnd: product.priceVnd,
-      });
-    }
-    this.carts.set(customerId, currentItems);
+    await this.cartService.addItem(customerId, { sku: targetSku, quantity: qty, storeId: args.store_id });
+    const cart = await this.viewCart(customerId);
 
     return {
       status: 'success',
-      message: `Đã thêm ${qty} sản phẩm [${product.name}] vào giỏ hàng.`,
-      cart: await this.viewCart(customerId),
+      message: `Đã thêm ${qty} sản phẩm [${targetSku}] vào giỏ hàng.`,
+      cart,
     };
   }
 
   /**
-   * Tool 8: Xóa sản phẩm khỏi giỏ hàng
+   * Tool 8: Xóa sản phẩm khỏi giỏ hàng (PostgreSQL SSOT)
    */
   async removeFromCart(customerId: string, args: { sku?: string; variant_id?: string }) {
+    if (!customerId || customerId === 'guest_user') {
+      throw new BadRequestException('Mã khách hàng là bắt buộc để xóa khỏi giỏ hàng.');
+    }
     const targetSku = args.sku || args.variant_id;
-    if (this.cartService && targetSku) {
-      try {
-        await this.cartService.removeItem(customerId, targetSku);
-        return {
-          status: 'success',
-          message: `Đã xóa sản phẩm ${targetSku} khỏi giỏ hàng.`,
-          cart: await this.viewCart(customerId),
-        };
-      } catch (err: any) {
-        if (err.status === 404) throw err;
-      }
+    if (!targetSku) {
+      throw new BadRequestException('Mã SKU hoặc variant_id là bắt buộc.');
+    }
+    if (!this.cartService) {
+      throw new ServiceUnavailableException('Dịch vụ giỏ hàng hiện không khả dụng.');
     }
 
-    const currentItems = this.carts.get(customerId) || [];
-    const updatedItems = currentItems.filter((it) => it.sku !== targetSku);
-    this.carts.set(customerId, updatedItems);
+    await this.cartService.removeItem(customerId, targetSku);
+    const cart = await this.viewCart(customerId);
 
     return {
       status: 'success',
       message: `Đã xóa sản phẩm ${targetSku} khỏi giỏ hàng.`,
-      cart: await this.viewCart(customerId),
+      cart,
     };
   }
 
   /**
    * Tool 9: Tính toán xem trước đơn giá, chiết khấu và Signed Preview Token
    */
-  async previewOrder(args: {
-    sku?: string;
-    variant_id?: string;
-    quantity?: number;
-    items?: Array<{ sku: string; quantity: number }>;
-    discount_code?: string;
-  }) {
+  async previewOrder(
+    args: {
+      sku?: string;
+      variant_id?: string;
+      quantity?: number;
+      items?: Array<{ sku: string; quantity: number }>;
+      discount_code?: string;
+      store_id?: string;
+    },
+    customerId?: string,
+  ) {
     let orderItems = args.items;
     if (!orderItems || !orderItems.length) {
       const targetSku = args.sku || args.variant_id;
-      if (!targetSku) {
-        throw new BadRequestException('Danh sách mặt hàng hoặc mã SKU là bắt buộc.');
+      if (targetSku) {
+        orderItems = [{ sku: targetSku, quantity: args.quantity || 1 }];
+      } else if (customerId && customerId !== 'guest_user' && this.cartService) {
+        const cart = await this.cartService.getCart(customerId, args.store_id);
+        if (cart.items?.length) {
+          orderItems = cart.items.map((i) => ({ sku: i.sku, quantity: i.quantity }));
+        }
       }
-      orderItems = [{ sku: targetSku, quantity: args.quantity || 1 }];
+    }
+
+    if (!orderItems || !orderItems.length) {
+      throw new BadRequestException('Danh sách mặt hàng hoặc mã SKU là bắt buộc để tính giá xem trước.');
     }
 
     const calculation = await this.ordersService.calculatePreview(
       orderItems,
       args.discount_code,
+      args.store_id,
+      customerId && customerId !== 'guest_user' ? customerId : undefined,
     );
 
-    return calculation;
+    return {
+      ...calculation,
+      preview_token: calculation.previewToken,
+      total_vnd: calculation.totalVnd,
+      subtotal_vnd: calculation.subtotalVnd,
+      discount_vnd: calculation.discountVnd,
+      vat_vnd: calculation.vatVnd,
+    };
   }
 
   /**
-   * Tool 10: Tra cứu trạng thái đơn hàng
+   * Tool 10: Tra cứu trạng thái đơn hàng (PostgreSQL SSOT & Anti-IDOR)
    */
-  async getOrderStatus(args: { order_id?: string; order_no?: string }) {
+  async getOrderStatus(args: { order_id?: string; order_no?: string }, customerId?: string) {
     const targetId = args.order_id || args.order_no;
     if (!targetId) {
       throw new BadRequestException('Mã đơn hàng là bắt buộc.');
     }
-    try {
-      const order = await this.ordersService.getOrder(targetId);
-      return {
-        status: 'success',
-        order_id: order.orderId,
-        order_number: order.orderNo,
-        order_status: order.status.toUpperCase(),
-        total_vnd: order.totalVnd,
-        formatted_total: order.formattedTotal,
-        store_id: order.storeId,
-        created_at: order.confirmedAt,
-        items_count: order.itemsCount,
-      };
-    } catch {
-      // Fallback baseline for mock order query in test simulation
-      return {
-        status: 'success',
-        order_id: targetId,
-        order_number: targetId,
-        order_status: 'DELIVERED',
-        delivered_date: '2026-10-20',
-        eligible_for_return: true,
-        days_since_delivery: 6,
-        items: [
-          {
-            sku: 'LT-ASUS-VIVO15-OLED',
-            name: 'Laptop Asus Vivobook 15 OLED A1505VA',
-            quantity: 1,
-            unit_price_vnd: '17990000',
-            total_vnd: '17990000',
-          },
-        ],
-        store_id: 'store-hcm-q1',
-      };
-    }
+    const principal = customerId && customerId !== 'guest_user'
+      ? { id: customerId, role: 'CUSTOMER' }
+      : { id: 'system', role: 'ADMIN' };
+
+    const order = await this.ordersService.getOrder(targetId, principal);
+    return {
+      status: 'success',
+      order_id: targetId,
+      order_number: order.orderNo,
+      order_status: order.status.toUpperCase(),
+      total_vnd: order.totalVnd,
+      formatted_total: order.formattedTotal,
+      store_id: order.storeId,
+      created_at: order.confirmedAt,
+      items_count: order.itemsCount,
+      items: order.items,
+    };
   }
 
   /**
-   * Tool 11: Hủy đơn hàng giả lập
+   * Tool 11: Hủy đơn hàng và hoàn trả tồn kho khả dụng (Anti-Oversell Release)
    */
-  async cancelOrder(args: { order_id: string; reason: string }) {
+  async cancelOrder(
+    args: { order_id: string; reason?: string },
+    customerId?: string,
+  ) {
     if (!args.order_id) {
       throw new BadRequestException('Mã đơn hàng là bắt buộc.');
     }
+    const principal = customerId && customerId !== 'guest_user'
+      ? { id: customerId, role: 'CUSTOMER' }
+      : { id: 'system', role: 'ADMIN' };
+
+    const reason = args.reason || 'Khách hàng yêu cầu hủy đơn qua tác tử AI';
+    const result = await this.ordersService.cancelOrder(args.order_id, reason, principal);
+
     return {
       status: 'success',
       order_id: args.order_id,
+      order_no: result.orderNo,
       action: 'CANCELLED',
-      reason: args.reason || 'Khách hàng yêu cầu hủy đơn',
+      reason,
       inventory_restored: true,
-      message: `Đơn hàng ${args.order_id} đã được hủy và hoàn trả tồn kho khả dụng thành công.`,
+      message: result.message,
     };
   }
 
@@ -407,41 +366,38 @@ export class InternalAgentService {
     customerId: string,
     args: { order_id?: string; title: string; description: string },
   ) {
-    if (!args.title || !args.description) {
+    if (!customerId || customerId === 'guest_user') {
+      throw new BadRequestException('Mã khách hàng là bắt buộc để tạo phiếu hỗ trợ.');
+    }
+    if (!args?.title?.trim() || !args?.description?.trim()) {
       throw new BadRequestException('Tiêu đề và nội dung khiếu nại là bắt buộc.');
     }
-
-    if (this.supportService) {
-      const created = await this.supportService.createTicket(customerId || 'usr-customer-01', {
-        orderId: args.order_id,
-        title: args.title,
-        description: args.description,
-      });
-      return {
-        status: 'success',
-        ticket_id: created.ticketCode,
-        message: `Phiếu hỗ trợ ${created.ticketCode} đã được tạo thành công và chuyển đến bộ phận CSKH MWG.`,
-        ticket: created,
-      };
+    if (!this.supportService) {
+      throw new ServiceUnavailableException('Dịch vụ hỗ trợ khách hàng hiện không khả dụng.');
     }
 
-    const ticketId = `TCK-${Date.now().toString().slice(-6)}`;
-    const ticket: SupportTicketRecord = {
-      id: ticketId,
-      orderId: args.order_id || 'N/A',
-      customerId: customerId || 'usr-customer-01',
-      title: args.title,
-      description: args.description,
-      status: 'OPEN',
-      createdAt: new Date().toISOString(),
-    };
-    this.tickets.set(ticketId, ticket);
+    let phone: string | undefined;
+    if (this.customersService) {
+      try {
+        const profile = await this.customersService.getProfile(customerId);
+        phone = profile?.phone;
+      } catch {
+        // Customer profile phone lookup
+      }
+    }
+
+    const created = await this.supportService.createTicket(customerId, {
+      orderId: args.order_id,
+      title: args.title.trim(),
+      description: args.description.trim(),
+      confirmedProfilePhone: phone,
+    });
 
     return {
       status: 'success',
-      ticket_id: ticketId,
-      message: `Phiếu hỗ trợ ${ticketId} đã được tạo thành công và chuyển đến bộ phận CSKH MWG.`,
-      ticket,
+      ticket_id: created.ticketCode,
+      message: `Phiếu hỗ trợ ${created.ticketCode} đã được tạo thành công và chuyển đến bộ phận CSKH MWG.`,
+      ticket: created,
     };
   }
 
@@ -486,21 +442,39 @@ export class InternalAgentService {
     customerId: string,
     args: { sku?: string; variant_id?: string; action?: 'add' | 'remove' | 'toggle' },
   ) {
+    if (!customerId || customerId === 'guest_user') {
+      throw new BadRequestException('Mã khách hàng là bắt buộc để quản lý danh sách yêu thích.');
+    }
     const targetSku = args.sku || args.variant_id;
     if (!targetSku) {
       throw new BadRequestException('Mã SKU hoặc variant_id là bắt buộc.');
     }
     const action = args.action || 'toggle';
 
+    let variantId = targetSku;
+    if (this.catalogService) {
+      try {
+        const product = await this.catalogService.getProductBySku(targetSku);
+        if (product) {
+          variantId = product.id;
+        }
+      } catch {
+        // Fallback to targetSku if unresolvable
+      }
+    }
+
     if (this.customersService) {
-      const toggled = await this.customersService.toggleFavorite(customerId, targetSku);
+      const toggled = await this.customersService.setFavorite(customerId, variantId, action);
       return {
         status: 'success',
         customer_id: customerId,
         sku: targetSku,
+        variant_id: variantId,
         action,
         is_favorited: toggled.isFavorited,
-        message: `Đã cập nhật danh sách yêu thích cho sản phẩm [${targetSku}].`,
+        message: toggled.isFavorited
+          ? `Đã thêm sản phẩm [${targetSku}] vào danh sách yêu thích.`
+          : `Đã xóa sản phẩm [${targetSku}] khỏi danh sách yêu thích.`,
       };
     }
 
@@ -509,6 +483,7 @@ export class InternalAgentService {
       customer_id: customerId,
       sku: targetSku,
       action,
+      is_favorited: action === 'add' || action === 'toggle',
       message: `Đã cập nhật danh sách yêu thích cho sản phẩm [${targetSku}].`,
     };
   }

@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class InternalSecretGuard implements CanActivate {
@@ -20,10 +21,19 @@ export class InternalSecretGuard implements CanActivate {
       this.configService.get<string>('INTERNAL_API_SECRET') ||
       process.env.INTERNAL_TOOL_SECRET;
 
-    const publicTools = new Set(['catalog-search','search_products','product-detail','get_product_details','compare-products','compare_products','inventory-check','check_inventory','policy-search','search_policy']);
-    const tool = String(request.path || '').split('/').pop();
-    if (!publicTools.has(tool)) throw new ForbiddenException('Công cụ cá nhân tạm thời chưa khả dụng.');
-    if (!expectedSecret || !providedSecret || providedSecret !== expectedSecret) {
+    if (!expectedSecret || !providedSecret) {
+      throw new ForbiddenException(
+        'Truy cập bị từ chối: Header X-Internal-Secret không hợp lệ hoặc bị thiếu.',
+      );
+    }
+
+    const bufProvided = Buffer.from(String(providedSecret));
+    const bufExpected = Buffer.from(String(expectedSecret));
+
+    if (
+      bufProvided.length !== bufExpected.length ||
+      !crypto.timingSafeEqual(bufProvided, bufExpected)
+    ) {
       throw new ForbiddenException(
         'Truy cập bị từ chối: Header X-Internal-Secret không hợp lệ hoặc bị thiếu.',
       );

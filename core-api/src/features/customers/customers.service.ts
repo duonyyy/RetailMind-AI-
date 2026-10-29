@@ -34,16 +34,40 @@ export class CustomersService {
     return Array.from(set);
   }
 
-  async toggleFavorite(customerId: string, variantId: string): Promise<{ isFavorited: boolean }> {
+  async setFavorite(
+    customerId: string,
+    variantId: string,
+    action: 'add' | 'remove' | 'toggle' = 'toggle',
+  ): Promise<{ isFavorited: boolean }> {
     if (this.favoriteRepo) {
       const existing = await this.favoriteRepo.findOne({
         where: { customer_id: customerId, variant_id: variantId },
       });
+
+      if (action === 'add') {
+        if (!existing) {
+          await this.favoriteRepo.save(
+            this.favoriteRepo.create({ customer_id: customerId, variant_id: variantId }),
+          );
+        }
+        return { isFavorited: true };
+      }
+
+      if (action === 'remove') {
+        if (existing) {
+          await this.favoriteRepo.delete({ customer_id: customerId, variant_id: variantId });
+        }
+        return { isFavorited: false };
+      }
+
+      // 'toggle'
       if (existing) {
         await this.favoriteRepo.delete({ customer_id: customerId, variant_id: variantId });
         return { isFavorited: false };
       } else {
-        await this.favoriteRepo.save({ customer_id: customerId, variant_id: variantId });
+        await this.favoriteRepo.save(
+          this.favoriteRepo.create({ customer_id: customerId, variant_id: variantId }),
+        );
         return { isFavorited: true };
       }
     }
@@ -54,13 +78,25 @@ export class CustomersService {
       this.memoryFavorites.set(customerId, set);
     }
 
-    if (set.has(variantId)) {
+    if (action === 'add') {
+      set.add(variantId);
+      return { isFavorited: true };
+    } else if (action === 'remove') {
       set.delete(variantId);
       return { isFavorited: false };
     } else {
-      set.add(variantId);
-      return { isFavorited: true };
+      if (set.has(variantId)) {
+        set.delete(variantId);
+        return { isFavorited: false };
+      } else {
+        set.add(variantId);
+        return { isFavorited: true };
+      }
     }
+  }
+
+  async toggleFavorite(customerId: string, variantId: string): Promise<{ isFavorited: boolean }> {
+    return this.setFavorite(customerId, variantId, 'toggle');
   }
 }
 
