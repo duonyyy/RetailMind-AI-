@@ -76,7 +76,7 @@ def create_tool_exec_node(executor: ToolExecutor):
             if awaiting_approval:
                 break
 
-            if result.error_code in ("unavailable", "timeout", "sensitive_input_unavailable"):
+            if result.error_code in ("unavailable", "timeout", "unknown_outcome", "idempotency_in_progress", "sensitive_input_unavailable"):
                 unavailable_message = masked_output_str
                 break
 

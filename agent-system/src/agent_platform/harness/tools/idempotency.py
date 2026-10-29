@@ -132,6 +132,9 @@ class IdempotencyManager:
         """
         p_hash = payload_hash or self.compute_payload_hash(arguments or {})
         b_key = backend_idempotency_key or key
+        # Distinct tool call IDs can represent the same uncertain operation.
+        # Serialize reservations for a principal, tool and payload across replicas.
+        operation_scope = json.dumps([tenant_id, user_id, tool_name, p_hash], ensure_ascii=False, separators=(",", ":"))
         now = time.time()
         expires_at = now + self.ttl_seconds if self.ttl_seconds else None
 
@@ -139,6 +142,25 @@ class IdempotencyManager:
             try:
                 with self._connect() as conn:
                     with conn.cursor() as cur:
+                        cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (operation_scope,))
+                        cur.execute(
+                            f"""
+                            SELECT status FROM {self.schema}.tool_idempotency
+                            WHERE tenant_id = %s AND user_id = %s AND tool_name = %s
+                              AND payload_hash = %s AND idempotency_key <> %s
+                              AND status IN ('in_progress', 'unknown_outcome')
+                            LIMIT 1
+                            """,
+                            (tenant_id, user_id, tool_name, p_hash, key),
+                        )
+                        unresolved = cur.fetchone()
+                        if unresolved:
+                            conn.commit()
+                            return IdempotencyReservation(
+                                action="unknown_outcome",
+                                error_code="unknown_outcome",
+                                message="Thao tác tương tự chưa được xác nhận; cần đối soát trước khi thực hiện lại.",
+                            )
                         cur.execute(
                             f"""
                             INSERT INTO {self.schema}.tool_idempotency (
@@ -248,6 +270,20 @@ class IdempotencyManager:
 
         with self._lock:
             existing = self._records.get(key)
+            if any(
+                other_key != key
+                and record.get("tenant_id") == tenant_id
+                and record.get("user_id") == user_id
+                and record.get("tool_name") == tool_name
+                and record.get("payload_hash") == p_hash
+                and record.get("status") in ("in_progress", "unknown_outcome")
+                for other_key, record in self._records.items()
+            ):
+                return IdempotencyReservation(
+                    action="unknown_outcome",
+                    error_code="unknown_outcome",
+                    message="Thao tác tương tự chưa được xác nhận; cần đối soát trước khi thực hiện lại.",
+                )
             if existing is None and key in self._store:
                 return IdempotencyReservation(
                     action="replay",

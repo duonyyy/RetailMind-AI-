@@ -238,8 +238,11 @@ class ToolExecutor:
         except PersistenceError:
             raise
         except Exception as exc:
-            if tool_spec.side_effect and hasattr(self.idempotency, "abort_execution"):
-                self.idempotency.abort_execution(idem_key)
+            if tool_spec.side_effect:
+                if getattr(ctx, "outcome_ambiguous", False) and hasattr(self.idempotency, "mark_unknown_outcome"):
+                    self.idempotency.mark_unknown_outcome(idem_key, error_code="execution_failure")
+                elif hasattr(self.idempotency, "abort_execution"):
+                    self.idempotency.abort_execution(idem_key)
             return ToolExecutionResult(
                 output=f"Execution error in tool '{tool_name}': {PIIMasker.mask(str(exc), fail_closed=False)}",
                 is_error=True,

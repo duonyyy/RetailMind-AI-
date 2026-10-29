@@ -143,6 +143,10 @@ async def _call_nestjs_tool(
     try:
         timeout = httpx.Timeout(1.0, connect=0.2)
         async with httpx.AsyncClient(timeout=timeout) as client:
+            # Once dispatch begins, a failure or an invalid response cannot prove
+            # that a side effect was not committed by the backend.
+            if ctx is not None:
+                ctx.outcome_ambiguous = True
             resp = await client.post(url, json=payload, headers=headers)
             if resp.status_code in (200, 201):
                 body = resp.json()
@@ -152,6 +156,8 @@ async def _call_nestjs_tool(
                     return body["data"]
                 return body
     except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        if ctx is not None:
+            ctx.outcome_ambiguous = False
         _NESTJS_OFFLINE_UNTIL = time.time() + 15.0
         logger.debug("NestJS Internal Gateway [%s] connect error before send (%s).", endpoint, exc)
     except (httpx.ReadTimeout, httpx.WriteTimeout, httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError) as exc:

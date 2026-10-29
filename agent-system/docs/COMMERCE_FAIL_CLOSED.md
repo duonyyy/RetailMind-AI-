@@ -6,9 +6,10 @@ The Agent does not fabricate stock, cart, order preview, order status, cancellat
 
 ## 2. Quản Trị Trạng Thái Bền Vững & Chống Trùng Lặp (Durable Idempotency)
 
-For side effects, a network timeout or connection drop after dispatch does **not** prove that the backend did nothing. To prevent duplicate executions across process restarts and distributed workers:
+For side effects, a timeout, server error, malformed response, or other failure after dispatch does **not** prove that the backend did nothing. The following Agent-side controls are a partial mitigation, not a complete end-to-end idempotency guarantee:
 
 - **Idempotency State Machine (`IdempotencyManager`)**: Backed by PostgreSQL in `agent.tool_idempotency` with unique key constraints (`idempotency_key = sha256(thread_id + tool_call_id)`).
+- A new call ID is blocked when the same tenant, user, tool and masked-payload fingerprint has an `in_progress` or `unknown_outcome` record. A PostgreSQL advisory transaction lock serializes reservations for that fingerprint. The memory adapter provides only process-local protection, which is lost on restart and not shared across replicas. Masking can cause conservative false matches.
 - **State Transitions**:
   - `in_progress`: Execution active; concurrent identical calls are rejected (`idempotency_in_progress`).
   - `completed`: Backend side-effect confirmed; replays return the cached output.
@@ -17,7 +18,7 @@ For side effects, a network timeout or connection drop after dispatch does **not
 
 ## 3. Trạng Thái Hiện Tại Của `core-api` Internal Tools
 
-Core-api's internal inventory, cart, order preview/status/cancellation and support ticket routes (`/api/v1/internal/tools/*` in `InternalAgentController`) currently return HTTP 503 (`ServiceUnavailableException: commerceUnavailable()`) because authoritative database transaction boundaries, ACID row locks (`SELECT ... FOR UPDATE`), and verified customer ownership checks are being hardened in backend services.
+Core-api's internal cart, cancellation, support ticket and favorite routes currently call the corresponding services, but do not persist the Agent's idempotency key atomically with each business mutation. In particular, a cart write can commit before the subsequent cart read fails. They therefore remain unverified for retry after timeout, restart and concurrent calls. A request whose backend execution succeeded but whose final response was lost may need reconciliation even if the Agent recorded `completed`; a new tool call ID alone is not a reliable business intent identifier.
 
 - Refund execution through Agent tools returns `ToolUnavailableError` because financial transactions require authoritative settlement.
 - Refund requests within policy thresholds create durable HITL approval records (`agent.hitl_approvals`) for supervisor review.
