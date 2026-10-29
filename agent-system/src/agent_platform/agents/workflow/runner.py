@@ -34,6 +34,7 @@ class OrchestratorRunner:
             "evidence": [],
             "tool_events": [],
             "pending_tool_calls": [],
+            "approval_call": None,
             "final_answer": None,
             "grounding_score": None,
             "grounding_status": None,

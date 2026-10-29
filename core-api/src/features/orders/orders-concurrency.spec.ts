@@ -1,19 +1,38 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { OrdersService } from './orders.service';
-import { CatalogService } from '../catalog/public-api';
+import { CatalogService, Variant } from '../catalog/public-api';
 import { InventoryService } from '../inventory/public-api';
 import { ConflictException } from '@nestjs/common';
+import {
+  createMockDataSource,
+  createMockVariantRepository,
+  AsyncRowMutex,
+} from '../../test/test-bed.helper';
 
 describe('High-Concurrency Locking Engine (Anti-Oversell & Anti-Deadlock)', () => {
   let ordersService: OrdersService;
   let inventoryService: InventoryService;
+  let mockDataSource: any;
 
   beforeEach(async () => {
+    AsyncRowMutex.reset();
+    mockDataSource = createMockDataSource();
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OrdersService,
         CatalogService,
         InventoryService,
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
+        },
+        {
+          provide: getRepositoryToken(Variant),
+          useValue: createMockVariantRepository(),
+        },
       ],
     }).compile();
 
@@ -25,10 +44,8 @@ describe('High-Concurrency Locking Engine (Anti-Oversell & Anti-Deadlock)', () =
     const storeId = 'store-hcm-q1';
     const targetSku = 'LT-ASUS-VIVO15-OLED';
 
-    // 1. Setup exact stock: onHand = 1, reserved = 0 (Only 1 item available!)
-    const memoryMap = (inventoryService as any).memoryInventory as Map<string, { onHand: number; reserved: number }>;
-    memoryMap.set(`${storeId}:${targetSku}`, { onHand: 1, reserved: 0 });
-    memoryMap.set(`${storeId}:var-asus-vivobook-15`, { onHand: 1, reserved: 0 });
+    // 1. Setup exact stock in DB: onHand = 1, reserved = 0 (Only 1 item available!)
+    mockDataSource.setStock(storeId, targetSku, 1, 0);
 
     const concurrentUsersCount = 20;
     const checkoutPromises: Promise<any>[] = [];
@@ -83,4 +100,3 @@ describe('High-Concurrency Locking Engine (Anti-Oversell & Anti-Deadlock)', () =
     expect(sorted[2].variantId).toBe('var-lenovo-03');
   });
 });
-

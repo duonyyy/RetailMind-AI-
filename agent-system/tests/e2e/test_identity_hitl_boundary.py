@@ -92,7 +92,8 @@ def test_bad_tokens_are_not_guests(client, bad):
 
 def test_reviewer_spoof_and_unsafe_approval_do_not_resolve(client):
     store = client.app.state.harness.approval_store
-    asyncio.run(store.create_request("thread", "run", "request_return_or_refund", {}, approval_id="a1"))
+    asyncio.run(client.app.state.harness.kv_store.set("chat_owner:thread", {"user_id": "alice", "tenant_id": "default"}))
+    asyncio.run(store.create_request("thread", "run", "request_return_or_refund", {}, approval_id="a1", requester_user_id="alice", requester_tenant_id="default"))
     resp = client.post("/api/hitl/review", headers=auth("boss"), json={"task_id":"a1", "decision":"rejected", "reviewer":"someone-else"})
     assert resp.status_code == 403
     for path in ("/api/hitl/a1/approve", "/v1/hitl/a1/approve"):
@@ -101,6 +102,32 @@ def test_reviewer_spoof_and_unsafe_approval_do_not_resolve(client):
     resp = client.post("/api/hitl/review", headers=auth("boss"), json={"task_id":"a1", "decision":"rejected"})
     assert resp.status_code == 200
     assert resp.json()["task"]["decision_by"] == "boss"
+    assert resp.json()["execution_status"] == "not_started"
+    assert "arguments" not in resp.json()["task"]
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/v1/approvals/cross", {"decision": "rejected"}),
+    ("/api/hitl/review", {"task_id": "cross", "decision": "rejected"}),
+])
+def test_cross_tenant_approval_is_hidden(client, path, body):
+    store = client.app.state.harness.approval_store
+    asyncio.run(store.create_request("other", "run", "request_return_or_refund", {"reason": "private"}, approval_id="cross", requester_user_id="alice", requester_tenant_id="other"))
+    assert client.post(path, json=body, headers=auth("boss")).status_code == 404
+    assert "cross" not in client.get("/v1/approvals", headers=auth("boss")).text
+    assert "cross" not in client.get("/api/hitl/queue", headers=auth("boss")).text
+
+
+def test_rejection_replay_and_spoofed_fields(client):
+    store = client.app.state.harness.approval_store
+    asyncio.run(client.app.state.harness.kv_store.set("chat_owner:t", {"user_id": "alice", "tenant_id": "default"}))
+    asyncio.run(store.create_request("t", "r", "request_return_or_refund", {"reason": "private"}, approval_id="a", requester_user_id="alice", requester_tenant_id="default"))
+    assert client.post("/v1/approvals/a", headers=auth("boss"), json={"decision": "rejected", "user_id": "alice"}).status_code == 422
+    first = client.post("/v1/approvals/a", headers=auth("boss"), json={"decision": "rejected"})
+    second = client.post("/api/hitl/review", headers=auth("boss"), json={"task_id": "a", "decision": "rejected"})
+    assert first.status_code == second.status_code == 200
+    assert "arguments" not in first.json()
+    assert second.json()["execution_status"] == "not_started"
 
 
 @pytest.mark.parametrize("path,session_field", [("/v1/chat", "thread_id"), ("/api/chat", "session_id")])
@@ -142,3 +169,14 @@ def test_support_handoff_emits_only_form_link_without_pii(client):
     assert '0912345678' not in result.text
     guest = client.post('/api/chat/stream', json={'query': 'hello'})
     assert '"type": "support_form"' not in guest.text
+
+
+def test_stream_does_not_invent_missing_approval_or_order(client):
+    async def execute(query, principal, thread_id):
+        return {"thread_id": thread_id, "run_id": "r", "status": "awaiting_approval", "tool_events": []}
+    client.app.state.harness.execute = execute
+    response = client.post("/api/chat/stream", headers=auth("alice"), json={"query": "hello"})
+    assert 'approval_unavailable' in response.text
+    assert 'ORD-100201' not in response.text
+    assert '500000' not in response.text
+    assert 'hitl_pending' not in response.text

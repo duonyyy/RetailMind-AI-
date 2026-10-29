@@ -15,10 +15,10 @@ Toàn bộ logic nghiệp vụ máy chủ được phân tách thành các **Fea
 | STT | Tên Feature | Trách Nhiệm Nghiệp Vụ Chính | Các Bảng CSDL Trực Thuộc | Use Cases Phục Vụ |
 |:---:|---|---|---|:---:|
 | 1 | **auth/** | Quản lý danh tính, cấp JWT, Token Rotation, Argon2id, RBAC Guards | `users`, `roles`, `user_roles`, `refresh_tokens` | UC01, UC02 |
-| 2 | **catalog/** | Danh mục Laptop, biến thể CPU/RAM/GPU, bộ lọc đa tiêu chí, so sánh máy | `categories`, `brands`, `products`, `product_variants`, `laptop_specifications` | UC04 |
-| 3 | **inventory/** | Tồn kho chi nhánh, tính tồn khả dụng, khóa bi quan hàng tồn kho | `stores`, `inventory`, `inventory_reservations` | UC04, UC08 |
-| 4 | **orders/** *(Commerce)* | Quản lý giỏ hàng, cấp Signed Preview Token, chốt đơn giả lập, hủy hoàn kho | `carts`, `cart_items`, `orders`, `order_items`, `idempotency_keys` | UC06, UC07, UC08, UC09 |
-| 5 | **internal-agent/** | 13 REST Endpoints định kiểu an toàn phục vụ độc quyền cho Python Agent | *(Điều phối trung gian kết nối các features)* | UC03 |
+| 2 | **catalog/** | Danh mục Laptop, biến thể CPU/RAM/GPU, bộ lọc đa tiêu chí, so sánh máy | `categories`, `brands`, `products`, `variants`, `product_specs` | UC04 |
+| 3 | **inventory/** | Tồn kho chi nhánh, tính tồn khả dụng, khóa bi quan hàng tồn kho | `stores`, `inventory` | UC04, UC08 |
+| 4 | **orders/** *(Commerce)* | Quản lý giỏ hàng (`cart/`), cấp Signed Preview Token, chốt đơn, hủy hoàn kho | `carts`, `cart_items`, `orders`, `order_items`, `idempotency_keys` | UC06, UC07, UC08, UC09 |
+| 5 | **internal-agent/** | 16 REST Endpoints định kiểu an toàn phục vụ độc quyền cho Python Agent | *(Điều phối trung gian kết nối các features)* | UC03 |
 | 6 | **customers/** | Quản lý hồ sơ người dùng, phân quyền truy cập dữ liệu cá nhân (chống IDOR) | `users`, `profiles` | UC01, UC02 |
 | 7 | **knowledge/** | Tài liệu chính sách bảo hành, đổi trả, quản lý phiên bản bất biến băm SHA-256 | `policies`, `document_versions`, `policy_chunks_metadata` | UC05, UC10 |
 | 8 | **support/** | Tạo và theo dõi phiếu khiếu nại, hỗ trợ kỹ thuật gắn liền với đơn hàng | `support_tickets`, `ticket_messages` | UC11, UC12 |
@@ -68,16 +68,17 @@ Toàn bộ logic nghiệp vụ máy chủ được phân tách thành các **Fea
   - Trước khi chốt đơn, người dùng phải tạo bản xem trước qua `POST /api/v1/orders/preview`.
   - Hệ thống sinh một token ký số HMAC-SHA256 chứa: `{ customer_id, store_id, items, total_amount_vnd, exp }`.
   - Token đóng vai trò là "Bản cam kết giá và số lượng" có hiệu lực đúng 10 phút (600 giây).
-* **Chốt đơn giả lập nguyên tử (`POST /api/v1/orders/confirm`)**:
-  1. Kiểm tra tính hợp lệ và thời hạn của Preview Token.
+* **Chốt đơn nguyên tử (`POST /api/v1/orders/checkout`)**:
+  1. Kiểm tra tính hợp lệ và thời hạn của Preview Token (đối chiếu cả store, customer, items, giá).
   2. Bắt đầu TypeORM QueryRunner Transaction CSDL.
   3. Khóa dòng tồn kho `SELECT ... FOR UPDATE` (sắp xếp ID tăng dần để chống Deadlock).
-  4. Trừ tồn kho thực tế, tạo bản ghi `orders` (trạng thái `CONFIRMED`).
+  4. Giữ chỗ tồn kho khả dụng (`reserved_qty += quantity`), tạo bản ghi `orders` (trạng thái `placed`).
   5. Sao chép snapshot giá bán vào `order_items`.
   6. Xóa các mặt hàng tương ứng trong giỏ hàng.
-  7. Commit Transaction và trả về đơn hàng đã tạo.
+  7. Ghi nhận `IdempotencyKey` và commit Transaction.
 * **Hủy đơn hoàn kho 1 lần (`POST /api/v1/orders/{id}/cancel`)**:
-  - Chỉ cho phép hủy khi đơn ở trạng thái `CONFIRMED`.
+  - Chỉ cho phép hủy khi đơn ở trạng thái `placed` hoặc `confirmed`.
+  - Khóa bi quan dòng `Order` và tự động hoàn trả `reserved_qty` về kho chi nhánh.
   - Cộng hoàn lại số lượng tồn kho đúng 1 lần duy nhất trong Transaction, cập nhật trạng thái đơn thành `CANCELLED`.
 
 ---

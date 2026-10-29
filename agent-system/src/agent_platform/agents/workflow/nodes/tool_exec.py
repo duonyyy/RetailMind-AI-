@@ -23,6 +23,7 @@ def create_tool_exec_node(executor: ToolExecutor):
         new_evidence: List[Evidence] = []
         awaiting_approval = False
         unavailable_message = None
+        approval_call = None
 
         for tc in pending_calls:
             t_start = time.time()
@@ -43,6 +44,14 @@ def create_tool_exec_node(executor: ToolExecutor):
 
             if result.requires_approval:
                 awaiting_approval = True
+                # Preserve only the reviewable, non-PII subset. This is not an
+                # executable payload; the original tool input is not retained here.
+                approval_call = {
+                    "name": tool_name,
+                    "id": call_id,
+                    "arguments": {k: str(args[k]) for k in ("order_id", "amount") if k in args},
+                    "rule": result.approval_metadata.get("rule"),
+                }
 
             # ToolExecutor already produced masked output in wrapped_output
             masked_output_str = str(result.output)
@@ -58,11 +67,14 @@ def create_tool_exec_node(executor: ToolExecutor):
             events.append(ToolEvent(
                 tool_name=tool_name,
                 call_id=call_id,
-                arguments=PIIMasker.mask(args, fail_closed=False),
+                arguments={} if result.requires_approval else PIIMasker.mask(args, fail_closed=False),
                 output=masked_output_str[:500],
                 is_error=result.is_error,
                 execution_time_ms=duration_ms,
             ))
+
+            if awaiting_approval:
+                break
 
             if result.error_code in ("unavailable", "timeout", "sensitive_input_unavailable"):
                 unavailable_message = masked_output_str
@@ -83,6 +95,7 @@ def create_tool_exec_node(executor: ToolExecutor):
             updates["final_answer"] = unavailable_message
         elif awaiting_approval:
             updates["status"] = "awaiting_approval"
+            updates["approval_call"] = approval_call
 
         return updates
 

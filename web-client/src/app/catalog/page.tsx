@@ -63,9 +63,6 @@ export default function CatalogPage() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
               Danh Mục Laptop &amp; Bộ Lọc Đa Chiều (SCR-03 • UC02)
             </h1>
-            <span className="ts-badge-success text-xs px-2.5 py-0.5 rounded-full font-bold">
-              SSOT Chân Lý Giá &amp; Tồn Kho
-            </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
             Lọc đa chiều theo ngân sách VNĐ, RAM, nhu cầu sử dụng và kiểm tra tồn kho khả dụng tại từng siêu thị MWG.
@@ -88,6 +85,10 @@ export default function CatalogPage() {
             <span>Giỏ Hàng</span>
           </Link>
         </div>
+      </div>
+
+      <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        Danh mục này hiện sử dụng dữ liệu mẫu. Giá, tồn kho và chính sách hiển thị chưa được xác minh với hệ thống bán hàng.
       </div>
 
       {/* Multi-Faceted Filter Bar (SCR-03 Spec) */}

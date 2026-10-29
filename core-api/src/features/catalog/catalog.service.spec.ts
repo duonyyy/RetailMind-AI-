@@ -1,12 +1,21 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { CatalogService } from './catalog.service';
+import { Variant } from './entities/variant.entity';
+import { createMockVariantRepository } from '../../test/test-bed.helper';
 
 describe('CatalogService (Laptops Filter & Specs)', () => {
   let catalogService: CatalogService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [CatalogService],
+      providers: [
+        CatalogService,
+        {
+          provide: getRepositoryToken(Variant),
+          useValue: createMockVariantRepository(),
+        },
+      ],
     }).compile();
 
     catalogService = module.get<CatalogService>(CatalogService);

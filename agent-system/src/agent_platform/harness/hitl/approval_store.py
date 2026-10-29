@@ -29,6 +29,9 @@ class ApprovalRequest(BaseModel):
     requester_tenant_id: Optional[str] = None
     approver_role: str = "admin"
     status: Literal["pending", "approved", "rejected"] = "pending"
+    # No executable backend contract is enabled. This value is deliberately
+    # fixed until durable execution transitions have their own migration.
+    execution_status: Literal["not_started"] = "not_started"
     decision_by: Optional[str] = None
     note: Optional[str] = None
     created_at: float = Field(default_factory=time.time)
@@ -118,7 +121,7 @@ class ApprovalStore:
                                 conn.commit()
                                 return self._row_to_request(existing_by_run)
 
-                        app_id = approval_id or f"app_{uuid.uuid4().hex[:10]}"
+                        app_id = approval_id or f"app_{uuid.uuid4().hex}"
                         cur.execute(
                             f"""
                             INSERT INTO {schema}.hitl_approvals (
@@ -188,7 +191,7 @@ class ApprovalStore:
                 ) from exc
 
         async with self._lock:
-            app_id = approval_id or f"app_{uuid.uuid4().hex[:10]}"
+            app_id = approval_id or f"app_{uuid.uuid4().hex}"
             existing = await self.kv.get(f"{self.PREFIX}{app_id}")
             if existing and isinstance(existing, dict):
                 return ApprovalRequest(**existing)

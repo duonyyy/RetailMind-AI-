@@ -4,15 +4,20 @@
 **Tài liệu**: `enterprise-docs/docs/05-backend/07-BACKEND_IMPLEMENTATION_PLAN.md`  
 **Phạm vi**: Nâng cấp toàn diện `core-api/` từ bản mẫu In-Memory (50%) lên hệ thống Production SSOT (100%)  
 **Căn cứ đặc tả**: `AGENTS.md`, `01-BACKEND_ARCHITECTURE.md` ➔ `06-ENTERPRISE_BEST_PRACTICES_FOODEE.md`, `09-DATABASE_DESIGN.md`  
-**Trạng thái**: Actionable Engineering Blueprint  
+**Trạng thái**: Superseded by Actionable 6-Phase Plan tại [`core-api/docs/CORE_API_IMPLEMENTATION_PLAN.md`](../../../core-api/docs/CORE_API_IMPLEMENTATION_PLAN.md)  
+
+> [!IMPORTANT]
+> **Thông báo cập nhật (29/10/2026):**  
+> Kế hoạch kỹ thuật 6 Phase hành động chi tiết nhằm khắc phục test harness, giải quyết 12 tests Jest đang lỗi sau khi gỡ bỏ in-memory fallback, và đóng kín toàn bộ điểm nghẽn P0/P1 trong `BAO_CAO_RA_SOAT_BACKLOG_2026-10-29.md` hiện được chuyển giao và quản lý tại:  
+> 👉 [`core-api/docs/CORE_API_IMPLEMENTATION_PLAN.md`](../../../core-api/docs/CORE_API_IMPLEMENTATION_PLAN.md).
 
 ---
 
 ## 1. Bức Tranh Tổng Quan: Từ 50% Lên 100%
 
-Hiện tại, `core-api/` đã hoàn thành ~50% khối lượng công việc (đã có cấu trúc `features/` & `shared/`, `public-api.ts`, 14/22 TypeORM Entities, 13 cổng `/internal/tools/*` với `InternalSecretGuard`, tính toán tiền tệ `decimal.js`, kiểm tra Magic Bytes và Headless BullMQ Worker; đạt 23/23 unit tests).
+Hiện tại, `core-api/` (vận hành trên **port 4000**) đã hoàn thành phần lớn khối lượng công việc nền tảng (cấu trúc `features/` & `shared/`, `public-api.ts`, 22 TypeORM Entities, 16 cổng `/api/v1/internal/tools/*` với `InternalSecretGuard`, tính toán tiền tệ `decimal.js`, kiểm tra Magic Bytes và Headless BullMQ Worker).
 
-Để đạt **100% chuẩn kiến trúc Enterprise**, chúng ta cần thực thi **6 Sprints kỹ thuật** nhằm thay thế toàn bộ dữ liệu giả lập (In-Memory Mocks) bằng **PostgreSQL 16+ Persistence thật**, bổ sung đủ **22 bảng CSDL**, hoàn thiện **Signed Preview Token (HMAC-SHA256)**, **Argon2id Auth** và **ACID Transaction chống Deadlock**.
+Để đạt **100% chuẩn kiến trúc Enterprise**, hệ thống đang thực thi hoàn thiện các chặng cuối nhằm thay thế toàn bộ dữ liệu giả lập (In-Memory Mocks) bằng **PostgreSQL 16+ Persistence thật**, hoàn thiện **Signed Preview Token (HMAC-SHA256)**, **Argon2id Auth**, **CartModule**, và **ACID Transaction chống Deadlock**.
 
 ```mermaid
 flowchart LR
@@ -135,13 +140,13 @@ sequenceDiagram
     OrderSvc->>HMAC: Ký HMAC-SHA256 {customerId, storeId, items, totalVnd, exp: +600s}
     HMAC-->>Customer: Trả về PreviewCalculationDTO + previewToken (hạn 10 phút)
 
-    Customer->>OrderSvc: 2. POST /api/v1/orders/confirm (Header: Idempotency-Key + previewToken)
+    Customer->>OrderSvc: 2. POST /api/v1/orders/checkout (Header: Idempotency-Key + previewToken)
     OrderSvc->>HMAC: Xác thực chữ ký & hạn 10 phút của previewToken
     OrderSvc->>DB: BEGIN TRANSACTION
     OrderSvc->>DB: Kiểm tra/Ghi bảng idempotency_keys
     OrderSvc->>OrderSvc: Sắp xếp variantIds tăng dần (Chống Deadlock!)
     OrderSvc->>DB: SELECT * FROM inventory WHERE ... FOR UPDATE (Pessimistic Lock)
-    OrderSvc->>DB: Trừ tồn kho + INSERT orders & order_items + DELETE cart_items
+    OrderSvc->>DB: Giữ tồn kho khả dụng + INSERT orders & order_items + DELETE cart_items
     OrderSvc->>DB: COMMIT TRANSACTION
     OrderSvc-->>Customer: 201 Created (OrderResultDTO)
 ```
@@ -149,7 +154,6 @@ sequenceDiagram
 #### Công việc chi tiết:
 1. **Nâng cấp `CatalogService` (`src/features/catalog/catalog.service.ts`)**:
    - Khi PostgreSQL bật (`variantRepo` khả dụng): Dùng `QueryBuilder` JOIN `products`, `brands`, `categories`, `product_specs`, hỗ trợ tìm kiếm không dấu tiếng Việt (`unaccent(product.name) ILIKE unaccent(:q)`), lọc theo `minPrice`, `maxPrice`, `minRam`.
-   - Giữ cơ chế fallback mượt về `defaultLaptops` khi chạy Unit Test độc lập không bật DB.
    - Xuất bản `CatalogReaderService` qua `src/features/catalog/public-api.ts`.
 2. **Nâng cấp `InventoryService` (`src/features/inventory/services/inventory.service.ts`)**:
    - Bổ sung phương thức `reserveMultipleItemsWithLock(queryRunner, storeId, items)`:
@@ -158,20 +162,20 @@ sequenceDiagram
 3. **Nâng cấp `OrdersService` (`src/features/orders/orders.service.ts`)**:
    - **Signed Preview Token (10 phút)**:
      - Trong `calculatePreview()`, sinh thêm trường `previewToken` ký bằng `crypto.createHmac('sha256', PREVIEW_TOKEN_SECRET)` và `expiresAt` (+600 giây).
-   - **Chốt đơn nguyên tử (`confirmOrder` / `checkout`)**:
+   - **Chốt đơn nguyên tử (`checkout`)**:
      - Xác thực `previewToken` (nếu hết hạn hoặc bị sửa giá ➔ ném `400 BadRequestException`).
      - Kiểm tra `Idempotency-Key` trong bảng `idempotency_keys` (hoặc Redis).
-     - Mở `QueryRunner` Transaction: Khóa bi quan tồn kho ➔ Kiểm tra giá khớp với Preview Token ➔ Trừ tồn kho ➔ Lưu `Order` (trạng thái `confirmed`) & `OrderItem` (snapshot giá) ➔ Xóa `CartItem` ➔ Ghi `AuditEvent` ➔ Commit.
+     - Mở `QueryRunner` Transaction: Khóa bi quan tồn kho ➔ Kiểm tra giá khớp với Preview Token ➔ Giữ tồn kho khả dụng ➔ Lưu `Order` (trạng thái `placed`) & `OrderItem` (snapshot giá) ➔ Xóa `CartItem` ➔ Ghi `AuditEvent` ➔ Commit.
    - **Hủy đơn hoàn kho 1 lần (`cancelOrder`)**:
      - Khóa dòng `Order` bằng `setLock('pessimistic_write')`.
-     - Nếu `order.status !== 'confirmed'` ➔ từ chối (`409 Conflict`) để chống hoàn kho 2 lần.
+     - Nếu `order.status !== 'placed' && order.status !== 'confirmed'` ➔ từ chối (`409 Conflict`) để chống hoàn kho 2 lần.
      - Cập nhật trạng thái sang `cancelled`, hoàn lại số lượng kho và ghi `AuditEvent`.
 
 ---
 
-### 🤖 SPRINT 5: Hoàn Thiện `knowledge/`, `support/`, `audit/` & Nối 13 Agent Tools — [92% ➔ 97%]
+### 🤖 SPRINT 5: Hoàn Thiện `knowledge/`, `support/`, `audit/` & Nối 16 Agent Tools — [92% ➔ 97%]
 
-**Mục tiêu**: Đóng kín toàn bộ 9 Feature Slices trong `02-FEATURE_SPECIFICATIONS.md` và đảm bảo 13 công cụ của AI Agent thao tác trên dữ liệu SSOT.
+**Mục tiêu**: Đóng kín toàn bộ 9 Feature Slices trong `02-FEATURE_SPECIFICATIONS.md` và đảm bảo 16 công cụ của AI Agent thao tác trên dữ liệu SSOT.
 
 #### Công việc chi tiết:
 1. **Tạo mới `src/features/knowledge/`**:
@@ -187,8 +191,8 @@ sequenceDiagram
    - `AuditService.logEvent({ actorId, action, entityType, entityId, payload })` chỉ cho phép `INSERT` (Append-Only), tuyệt đối không có hàm `update` hay `delete`.
    - Endpoint Admin: `GET /api/v1/admin/audit-logs` (`UC12`).
 4. **Cập nhật `src/features/internal-agent/`**:
-   - Bổ sung alias `/internal/tools/manage_favorite` vào `InternalAgentController` (bên cạnh 13 endpoints hiện có) để khớp 100% cả tài liệu `02` lẫn `04`.
-   - Kết nối `viewCart`, `addToCart`, `removeFromCart`, `createSupportTicket`, `searchPolicy` vào các Repositories/Services thật (vẫn giữ in-memory fallback khi chạy unit test không DB).
+   - Bổ sung alias `/internal/tools/manage_favorite` vào `InternalAgentController` (bên cạnh các endpoints hiện có) để khớp 100% cả tài liệu `02` lẫn `04`.
+   - Kết nối `viewCart`, `addToCart`, `removeFromCart`, `createSupportTicket`, `searchPolicy` vào các Repositories/Services thật.
 
 ---
 
@@ -210,13 +214,13 @@ sequenceDiagram
 
 ---
 
-## 3. Bảng Kiểm Tra Nghiệm Thu Cuối Cùng (Definition of Done - 100%)
+## 3. Bảng Kiểm Tra Nghiệm Thu Cuối Cùng (Definition of Done)
 
 - [x] **SSOT & Database**: Đủ 22 Entities TypeORM, file Migration chạy thành công tạo 22 bảng + Indexes + Constraints trên PostgreSQL 16+.
 - [x] **Zero-Float Currency**: 100% phép tính tiền tệ VNĐ dùng `Decimal.js` và cột DB là `NUMERIC(18, 0)`.
 - [x] **Auth & Security**: Đăng nhập Argon2id, HttpOnly Cookie, Token Rotation, `JwtAuthGuard` kiểm tra `is_active`, chống IDOR trả về 404.
 - [x] **Concurrency & Anti-Oversell**: Sắp xếp `variant_id` tăng dần trước khi `SELECT ... FOR UPDATE`, có Signed Preview Token 10 phút và Idempotency Key.
-- [x] **Agent Execution Boundary**: 13 internal tools hoạt động chuẩn xác qua `InternalSecretGuard`, **không tồn tại tool `confirm_order`**.
 - [x] **Async Pipeline**: Upload kiểm tra Magic Bytes, lưu MinIO SHA-256, đẩy BullMQ Worker cắt văn bản 11 bậc NĐ 30/2020/NĐ-CP.
-- [x] **Automated Tests**: 100% Unit Tests, Architecture Boundary Tests & Concurrency Tests vượt qua (`npm test` xanh toàn bộ).
+- [ ] **Automated Test Harness (Phase 1 đang thực hiện)**: Khắc phục 12 tests Jest bị lỗi do thiếu mock TypeORM harness sau khi loại bỏ fallback in-memory, đưa toàn bộ test suite về 100% xanh.
+- [ ] **Agent Execution Boundary (Phase 5 đang thực hiện)**: Đấu nối đủ 16 Internal Tools thật với backend, xóa bỏ hoàn toàn HTTP 503 (`commerceUnavailable`) trên `InternalAgentController`.
 

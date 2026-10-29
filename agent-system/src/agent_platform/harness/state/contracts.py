@@ -48,6 +48,7 @@ class AgentState(TypedDict):
 
     # Pending tool calls to be processed by tool_gate / tool_exec
     pending_tool_calls: List[Dict[str, Any]]
+    approval_call: Optional[Dict[str, Any]]
 
     # Final outputs and termination status
     final_answer: Optional[str]

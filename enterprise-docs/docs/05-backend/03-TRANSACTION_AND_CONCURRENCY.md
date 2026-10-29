@@ -30,8 +30,8 @@ sequenceDiagram
 
     Note over UserA,UserB: Cả 2 cùng bấm chốt đơn Laptop ASUS ROG (Tồn khả dụng = 1)
 
-    UserA->>Nest: 1. Confirm Order (Token A)
-    UserB->>Nest: 2. Confirm Order (Token B)
+    UserA->>Nest: 1. POST /orders/checkout (Token A)
+    UserB->>Nest: 2. POST /orders/checkout (Token B)
 
     Nest->>PG: BEGIN TRANSACTION A
     Nest->>PG: SELECT * FROM inventory WHERE variant_id = '...' FOR UPDATE (Tx A)
@@ -42,8 +42,8 @@ sequenceDiagram
     Note over PG: Tx B bị treo chờ (BLOCKED) cho đến khi Tx A kết thúc!
 
     Note over Nest,PG: Tx A kiểm tra: available_qty = 1 >= 1 (HỢP LỆ)
-    Nest->>PG: UPDATE inventory SET quantity = 0 WHERE ... (Tx A)
-    Nest->>PG: INSERT INTO orders ... (status = 'CONFIRMED') (Tx A)
+    Nest->>PG: UPDATE inventory SET reserved_qty = reserved_qty + 1 WHERE ... (Tx A)
+    Nest->>PG: INSERT INTO orders ... (status = 'placed') (Tx A)
     Nest->>PG: COMMIT TRANSACTION A
     Note over PG: Khóa được giải phóng! Tx A thành công!
     Nest-->>UserA: 201 Created: Đơn hàng thành công!
@@ -56,7 +56,7 @@ sequenceDiagram
 
 ### Triển Khai Trong NestJS (TypeORM):
 ```typescript
-// core-api/src/modules/commerce/orders.service.ts
+// core-api/src/features/orders/orders.service.ts & inventory.service.ts
 const queryRunner = this.dataSource.createQueryRunner();
 await queryRunner.connect();
 await queryRunner.startTransaction();
@@ -69,12 +69,12 @@ try {
     .where('inv.variant_id = :variantId AND inv.store_id = :storeId', { variantId, storeId })
     .getOne();
 
-  if (!inventoryItem || (inventoryItem.quantity - inventoryItem.reservedQuantity) < requestedQty) {
-    throw new InsufficientStockException();
+  if (!inventoryItem || (inventoryItem.on_hand_qty - inventoryItem.reserved_qty) < requestedQty) {
+    throw new ConflictException('Số lượng tồn kho khả dụng không đủ.');
   }
 
-  // 2. Trừ tồn kho và ghi nhận đơn hàng
-  inventoryItem.quantity -= requestedQty;
+  // 2. Giữ chỗ tồn kho và chốt đơn hàng
+  inventoryItem.reserved_qty += requestedQty;
   await queryRunner.manager.save(inventoryItem);
   
   await queryRunner.commitTransaction();

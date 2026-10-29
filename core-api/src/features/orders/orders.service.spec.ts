@@ -1,21 +1,34 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { OrdersService } from './orders.service';
-import { CatalogService } from '../catalog/public-api';
+import { CatalogService, Variant } from '../catalog/public-api';
 import { InventoryService } from '../inventory/public-api';
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import Decimal from 'decimal.js';
+import { createMockDataSource, createMockVariantRepository } from '../../test/test-bed.helper';
 
 describe('OrdersService (SSOT Commerce & Decimal Precision)', () => {
   let ordersService: OrdersService;
   let catalogService: CatalogService;
   let inventoryService: InventoryService;
+  let mockDataSource: any;
 
   beforeEach(async () => {
+    mockDataSource = createMockDataSource();
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OrdersService,
         CatalogService,
         InventoryService,
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
+        },
+        {
+          provide: getRepositoryToken(Variant),
+          useValue: createMockVariantRepository(),
+        },
       ],
     }).compile();
 

@@ -12,19 +12,17 @@ Primary Gateway Router serving Next.js Frontend Client (apps/frontend):
 """
 
 import json
-import uuid
 import time
 from typing import Optional, Dict, Any, List, Literal
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.state.principal import Principal
 from agent_platform.api.deps import get_optional_principal, owned_thread, require_role
 from agent_platform.harness.guards.sanitizer import InputSanitizer
 from agent_platform.harness.guards.injection import PromptInjectionDetector
-from agent_platform.harness.guards.pii import PIIMasker
 from agent_platform.llm.providers.scripted import ScriptedLLM
 
 router = APIRouter(prefix="/api", tags=["Web Client Gateway"])
@@ -40,6 +38,7 @@ class LegacyChatRequest(BaseModel):
 
 
 class HitlReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     task_id: Optional[str] = None
     approval_id: Optional[str] = None
     decision: Literal["approve", "approved", "reject", "rejected"] = "approved"
@@ -120,48 +119,14 @@ async def chat_stream_endpoint(
         # Check HITL Gate requirement
         is_hitl = state.get("status") == "awaiting_approval"
         if is_hitl:
-            # Find the tool call requiring approval
-            pending_events = [ev for ev in state.get("tool_events", []) if "requires human approval" in str(ev.output)]
-            if pending_events:
-                ev = pending_events[-1]
-                tool_name = ev.tool_name
-                args = ev.arguments
-            else:
-                tool_name = "request_return_or_refund"
-                args = {"amount": "500000", "reason": PIIMasker.mask(clean_query, fail_closed=False)}
-
-            amount_val = args.get("amount", "500000")
-            order_val = args.get("order_id", "ORD-100201")
-            task_id = state.get("approval_id") or f"task-hitl-{uuid.uuid4().hex[:6]}"
-
-            try:
-                app_req = await harness.approval_store.create_request(
-                    thread_id=thread_id,
-                    run_id=state.get("run_id", f"run_{uuid.uuid4().hex[:8]}"),
-                    tool_name=tool_name,
-                    arguments=PIIMasker.mask(args, fail_closed=False),
-                    approver_role="admin",
-                    approval_id=task_id,
-                    requester_user_id=principal.user_id,
-                    requester_tenant_id=principal.tenant_id,
-                )
-            except PersistenceError:
-                err_msg = "Không thể lưu yêu cầu phê duyệt HITL vào cơ sở dữ liệu bền vững."
-                yield f"data: {json.dumps({'type': 'error', 'code': 'persistence_unavailable', 'message': err_msg})}\n\n"
+            task_id = state.get("approval_id")
+            if not task_id:
+                yield f"data: {json.dumps({'type': 'error', 'code': 'approval_unavailable', 'message': 'Không thể xác nhận yêu cầu phê duyệt.'})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
-
-            hitl_reason = (
-                f"Khoản bồi hoàn {amount_val} VNĐ cho đơn hàng {order_val} vượt hạn mức AI tự động "
-                "(200.000 VNĐ). Yêu cầu Quản lý xác nhận."
-            )
-            yield f"data: {json.dumps({'type': 'hitl_pending', 'task_id': app_req.approval_id, 'reason': hitl_reason})}\n\n"
-
-            answer_text = (
-                f"Yêu cầu bồi hoàn {amount_val} VNĐ cho đơn hàng {order_val} đã được tiếp nhận. "
-                f"Do số tiền vượt quá hạn mức tự động 200.000 VNĐ, hệ thống đã chuyển tác vụ (Mã: {app_req.approval_id}) "
-                f"vào hàng đợi phê duyệt của Quản lý cửa hàng (HITL Gate). Vui lòng chờ phản hồi trong vòng 24 giờ."
-            )
+            hitl_reason = "Yêu cầu cần được kiểm tra; thao tác nghiệp vụ chưa được thực hiện."
+            yield f"data: {json.dumps({'type': 'hitl_pending', 'task_id': task_id, 'reason': hitl_reason})}\n\n"
+            answer_text = "Yêu cầu đã được ghi nhận để kiểm tra; chưa thực hiện giao dịch."
             yield f"data: {json.dumps({'type': 'answer', 'content': answer_text, 'grounding_score': None})}\n\n"
             yield "data: [DONE]\n\n"
             return
@@ -250,7 +215,7 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request, principal
     ]
 
     return {
-        "status": "error" if state.get("status") in ("abstained", "failed") else "success",
+        "status": "awaiting_approval" if requires_approval else ("error" if state.get("status") in ("abstained", "failed") else "success"),
         "session_id": thread_id,
         "final_answer": state.get("final_answer") or "Yêu cầu đã được tiếp nhận.",
         "grounding_score": state.get("grounding_score"),
@@ -274,24 +239,18 @@ async def get_hitl_queue(request: Request, admin: Principal = Depends(require_ro
         raise HTTPException(status_code=503, detail="Approval persistence store unavailable.")
     formatted = []
     for item in pending_list:
-        amount_str = item.arguments.get("amount", "")
-        order_str = item.arguments.get("order_id", "")
-        reason_str = item.arguments.get("reason", "")
-        display_reason = (
-            f"Khoản bồi hoàn {amount_str} VNĐ cho đơn hàng {order_str} vượt hạn mức AI tự động "
-            "(200.000 VNĐ). Yêu cầu Quản lý xác nhận."
-            if amount_str else reason_str or f"Yêu cầu phê duyệt công cụ {item.tool_name}"
-        )
+        if not item.requester_user_id or item.requester_tenant_id != admin.tenant_id:
+            continue
         formatted.append({
             "task_id": item.approval_id,
             "approval_id": item.approval_id,
             "session_id": item.thread_id,
             "thread_id": item.thread_id,
-            "query": f"Bồi hoàn đơn {order_str}: {reason_str}" if order_str else (reason_str or f"Yêu cầu {item.tool_name}"),
-            "reason": display_reason,
+            "query": "Yêu cầu phê duyệt",
+            "reason": "Quyết định không đồng nghĩa với thực hiện nghiệp vụ.",
             "status": item.status.upper(),  # "PENDING"
             "tool_name": item.tool_name,
-            "arguments": item.arguments,
+            "execution_status": item.execution_status,
             "timestamp": "Vừa xong",
             "created_at": item.created_at,
         })
@@ -315,20 +274,21 @@ async def review_hitl(req: HitlReviewRequest, request: Request, admin: Principal
         resumed = await harness.resolve_and_resume_hitl(
             approval_id=task_id,
             decision=norm_decision,
-            approver_user_id=admin.user_id,
+            approver=admin,
             note=req.reason or "",
         )
         resolved = resumed["approval"]
         return {
-            "status": "success",
-            "message": f"Tác vụ {task_id} đã được xử lý: {norm_decision.upper()}",
+            "status": resolved.status,
+            "execution_status": resolved.execution_status,
+            "message": "Đã ghi nhận quyết định; nghiệp vụ chưa được thực hiện.",
             "task_id": task_id,
             "decision": norm_decision,
-            "task": resolved.model_dump(),
+            "task": resolved.model_dump(exclude={"arguments"}),
             "resumed_output": resumed.get("resumed_output"),
         }
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"Task '{task_id}' không tồn tại trong hàng đợi HITL.")
+        raise HTTPException(status_code=404, detail="Không tìm thấy yêu cầu phê duyệt.")
     except PermissionError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except ValueError as ve:

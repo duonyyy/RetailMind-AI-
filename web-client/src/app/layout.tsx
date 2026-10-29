@@ -4,10 +4,10 @@ import { AppSidebar, TopBar } from "@/components/workspace";
 
 export const metadata: Metadata = {
   title: "RetailMind AI — MWG Retail Intelligence Platform",
-  description: "Production-Oriented Agentic Retail Intelligence Platform & SSOT Commerce Engine",
+  description: "Khám phá laptop và nhận tư vấn cùng RetailMind AI.",
   icons: {
-    icon: "/favicon.ico",
-    apple: "/apple-touch-icon.png",
+    icon: "/brand/favicon.ico",
+    apple: "/brand/apple-touch-icon.png",
   },
 };
 

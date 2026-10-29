@@ -22,7 +22,7 @@ Backend của **RetailMind AI** được xây dựng duy nhất bằng nền t�
    - **`shared/` (Hạ tầng & Tiện ích dùng chung):** Tập trung toàn bộ Database Connection, TypeORM Migrations/Seeds, Custom Decorators (`@Roles()`), Guards (`JwtAuthGuard`, `InternalSecretGuard`), Exception Filters, Logging Interceptors và SafeMath tiền tệ VNĐ.
    - **`features/` (Phân hệ nghiệp vụ độc lập thay cho modules):** Tổ chức mã nguồn theo từng Feature lát cắt nghiệp vụ (Auth, Catalog, Inventory, Orders/Commerce, Internal Agent, Customers). Mỗi feature đóng gói Controller, Service, Entities và DTOs riêng biệt.
 3. **Cổng Kết Nối Tác Tử An Toàn (Internal Tool Execution Gateway):**
-   - Cung cấp 13 Endpoints nội bộ (`/internal/tools/*`) được bảo vệ bằng khóa bí mật `X-Internal-Secret` để phục vụ riêng cho Python AI Agent gọi thực thi.
+   - Cung cấp 16 Endpoints nội bộ (`/api/v1/internal/tools/*`) được bảo vệ bằng khóa bí mật `X-Internal-Secret` để phục vụ riêng cho Python AI Agent gọi thực thi.
    - AI Agent chỉ được đề xuất tham số (Tool Calls); NestJS Backend đóng vai trò người gác cổng kiểm tra quyền hạn (Authz) và thực thi an toàn.
 
 ---
@@ -37,8 +37,8 @@ Backend của **RetailMind AI** được xây dựng duy nhất bằng nền t�
 | **04** | [`04-INTERNAL_TOOL_GATEWAY.md`](04-INTERNAL_TOOL_GATEWAY.md) | Hợp đồng giao thức kết nối nội bộ giữa NestJS Backend và Python AI Agent: Header bí mật `X-Internal-Secret`, ranh giới an toàn Zero-Trust và xác thực quyền hạn Server-Side. |
 | **05** | [`05-ASYNC_PROCESSING_MINIO_REDIS_BULLMQ.md`](05-ASYNC_PROCESSING_MINIO_REDIS_BULLMQ.md) | Pipeline xử lý ngầm bất đồng bộ: MinIO S3 Object Storage (băm SHA-256), Redis Cache & Broker, BullMQ Ingestion Worker (phân đoạn 11 bậc NĐ 30/2020/NĐ-CP và nạp vector idempotent). |
 | **06** | [`06-ENTERPRISE_BEST_PRACTICES_FOODEE.md`](06-ENTERPRISE_BEST_PRACTICES_FOODEE.md) | 10 Tinh hoa kỹ thuật Enterprise từ `foodee-be/core-api`: Ranh giới `public-api.ts` & ESLint boundaries, Headless Worker (`createApplicationContext`), Transactional Outbox, phòng thủ Anti-Enumeration (404), Magic Bytes buffer upload và đối soát tự hàn gắn (Reconciliation Cron). |
-| **07** | [`07-BACKEND_IMPLEMENTATION_PLAN.md`](07-BACKEND_IMPLEMENTATION_PLAN.md) | Kế hoạch triển khai chi tiết 6 Sprints đưa `core-api/` từ 50% (In-Memory Baseline) lên 100% (PostgreSQL 22 bảng SSOT, Argon2id, HMAC Preview Token & ACID Anti-Deadlock). |
-
+| **07** | [`07-BACKEND_IMPLEMENTATION_PLAN.md`](07-BACKEND_IMPLEMENTATION_PLAN.md) | Kế hoạch triển khai chi tiết 6 Sprints đưa `core-api/` từ 50% lên 100% SSOT. Kế hoạch thực thi 6 phase chi tiết hiện tại xem tại [`core-api/docs/CORE_API_IMPLEMENTATION_PLAN.md`](../../../core-api/docs/CORE_API_IMPLEMENTATION_PLAN.md). |
+ 
 ---
 
 ## 3. Sơ Đồ Kiến Trúc NestJS Backend Trong Hệ Thống Tổng Thể
@@ -62,7 +62,7 @@ flowchart TB
     %% ==========================================
     %% NESTJS BACKEND CORE
     %% ==========================================
-    subgraph NestCore ["🏛️ NESTJS 12+ BACKEND CORE (PORT 3001 — SSOT OWNER)"]
+    subgraph NestCore ["🏛️ NESTJS 12+ BACKEND CORE (PORT 4000 — SSOT OWNER)"]
         direction TB
 
         subgraph SharedKernel ["📁 shared/ (HẠ TẦNG & TIỆN ÍCH DÙNG CHUNG)"]

@@ -1,12 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { InternalAgentController } from './internal-agent.controller';
 import { InternalAgentService } from './internal-agent.service';
-import { CatalogService } from '../catalog/public-api';
+import { CatalogService, Variant } from '../catalog/public-api';
 import { InventoryService } from '../inventory/public-api';
 import { OrdersService } from '../orders/public-api';
 import { ConfigService } from '@nestjs/config';
 import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
 import { ForbiddenException, ExecutionContext, ServiceUnavailableException } from '@nestjs/common';
+import { createMockVariantRepository } from '../../test/test-bed.helper';
 
 describe('InternalAgentGateway (Inter-Service Security & 13 Tools)', () => {
   let controller: InternalAgentController;
@@ -23,6 +25,10 @@ describe('InternalAgentGateway (Inter-Service Security & 13 Tools)', () => {
         InventoryService,
         OrdersService,
         InternalSecretGuard,
+        {
+          provide: getRepositoryToken(Variant),
+          useValue: createMockVariantRepository(),
+        },
         {
           provide: ConfigService,
           useValue: {

@@ -1,13 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { OrdersService } from './orders.service';
-import { CatalogService } from '../catalog/public-api';
+import { CatalogService, Variant } from '../catalog/public-api';
 import { InventoryService } from '../inventory/public-api';
 import { DataSource, QueryRunner, Repository } from 'typeorm';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { IdempotencyKey } from './entities/idempotency-key.entity';
-import { ConflictException } from '@nestjs/common';
 import Decimal from 'decimal.js';
+import {
+  createMockDataSource,
+  createMockVariantRepository,
+} from '../../test/test-bed.helper';
 
 describe('OrdersService ACID Commerce Transaction & Idempotency Integration', () => {
   let ordersService: OrdersService;
@@ -15,9 +19,25 @@ describe('OrdersService ACID Commerce Transaction & Idempotency Integration', ()
   let inventoryService: InventoryService;
 
   describe('1. In-Memory Stock Restoration on Cancel Order', () => {
+    let mockDataSource: any;
+
     beforeEach(async () => {
+      mockDataSource = createMockDataSource();
+
       const module: TestingModule = await Test.createTestingModule({
-        providers: [OrdersService, CatalogService, InventoryService],
+        providers: [
+          OrdersService,
+          CatalogService,
+          InventoryService,
+          {
+            provide: DataSource,
+            useValue: mockDataSource,
+          },
+          {
+            provide: getRepositoryToken(Variant),
+            useValue: createMockVariantRepository(),
+          },
+        ],
       }).compile();
 
       ordersService = module.get<OrdersService>(OrdersService);
@@ -76,6 +96,20 @@ describe('OrdersService ACID Commerce Transaction & Idempotency Integration', ()
         rollbackTransaction: jest.fn().mockResolvedValue(undefined),
         release: jest.fn().mockResolvedValue(undefined),
         manager: {
+          query: jest.fn().mockImplementation(async (sql: string, params: any[] = []) => {
+            const lowerSql = sql.toLowerCase();
+            if (lowerSql.includes('stores')) {
+              return [{ id: '10000000-0000-0000-0000-000000000001', code: 'store-hcm-q1', name: 'Thế Giới Di Động HCM' }];
+            }
+            if (lowerSql.includes('variants')) {
+              const sku = params[0];
+              if (sku === 'LT-DELL-INSP14-5430') {
+                return [{ id: '50000000-0000-0000-0000-000000000002', sku: 'LT-DELL-INSP14-5430', name: 'Laptop Dell Inspiron 14 5430', price_vnd: '18490000' }];
+              }
+              return [{ id: '50000000-0000-0000-0000-000000000001', sku: 'LT-ASUS-VIVO15-OLED', name: 'Laptop Asus Vivobook 15 OLED A1505VA', price_vnd: '17990000' }];
+            }
+            return [];
+          }),
           findOne: jest.fn().mockResolvedValue(null),
           create: jest.fn().mockImplementation((entityClass, plainObj) => {
             const instance = new entityClass();
@@ -109,6 +143,7 @@ describe('OrdersService ACID Commerce Transaction & Idempotency Integration', ()
           CatalogService,
           InventoryService,
           { provide: DataSource, useValue: mockDataSource },
+          { provide: getRepositoryToken(Variant), useValue: createMockVariantRepository() },
         ],
       }).compile();
 
@@ -139,7 +174,7 @@ describe('OrdersService ACID Commerce Transaction & Idempotency Integration', ()
       expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
       expect(reserveMultipleSpy).toHaveBeenCalledWith(
         mockQueryRunner,
-        'store-hcm-q1',
+        '10000000-0000-0000-0000-000000000001',
         [
           { variantId: 'LT-ASUS-VIVO15-OLED', quantity: 1 },
           { variantId: 'LT-DELL-INSP14-5430', quantity: 2 },
@@ -279,4 +314,3 @@ describe('OrdersService ACID Commerce Transaction & Idempotency Integration', ()
     });
   });
 });
-

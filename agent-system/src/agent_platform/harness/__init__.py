@@ -194,19 +194,22 @@ class AgentHarness:
 
         # Persist HITL approval request durably whenever workflow pauses for approval
         if state.get("status") == "awaiting_approval":
-            pending_calls = state.get("pending_tool_calls", [])
-            t_call = pending_calls[0] if pending_calls else {}
-            t_name = t_call.get("name", "request_return_or_refund")
-            t_args = t_call.get("args") or t_call.get("arguments") or {}
+            t_call = state.get("approval_call") or {}
+            if (t_call.get("name") != "request_return_or_refund"
+                    or not t_call.get("id") or not principal or principal.role == "guest"):
+                state["status"] = "abstained"
+                state["final_answer"] = "Không thể tạo yêu cầu phê duyệt an toàn."
+                return state
+            t_name = t_call["name"]
+            t_args = {**t_call.get("arguments", {}), "call_id": t_call["id"],
+                      "policy_rule": t_call.get("rule"), "intent_complete": False}
             run_id_val = state.get("run_id", f"run_{uuid.uuid4().hex[:6]}")
-            app_id = f"task-hitl-{run_id_val.replace('run_', '')}"
             req = await self.approval_store.create_request(
                 thread_id=session_key,
                 run_id=run_id_val,
                 tool_name=t_name,
                 arguments=t_args,
                 approver_role="admin",
-                approval_id=app_id,
                 requester_user_id=principal.user_id if principal else None,
                 requester_tenant_id=principal.tenant_id if principal else None,
             )
@@ -265,28 +268,40 @@ class AgentHarness:
         self,
         approval_id: str,
         decision: Literal["approved", "rejected"],
-        approver_user_id: str,
+        approver: Principal,
         note: str = "",
     ) -> Dict[str, Any]:
-        """Reject safely; approval stays pending until requester-bound execution exists."""
-        # The existing approval record does not bind the original authenticated
-        # requester, and direct invocation below would bypass executor/ownership checks.
-        # Leave the request pending until a safe resume contract exists.
+        """Record a decision only. No backend execution or graph resume is enabled."""
+        if approver.role != "admin":
+            raise PermissionError("Admin authorization required.")
+        current = await self.approval_store.get_request(approval_id)
+        if (not current or not current.requester_user_id or
+                current.requester_tenant_id != approver.tenant_id):
+            raise KeyError("Approval not found.")
+        owner = await self.kv_store.get(f"chat_owner:{current.thread_id}")
+        if not isinstance(owner, dict) or owner.get("user_id") != current.requester_user_id or owner.get("tenant_id") != current.requester_tenant_id:
+            raise KeyError("Approval not found.")
+        # Existing records lack a complete immutable intent. Never let a reviewer
+        # attest to an action whose exact contents cannot be established.
         if decision == "approved":
-            raise PermissionError("Approval execution is disabled until requester ownership can be verified.")
+            raise PermissionError("Approval unavailable: complete intent and backend authorization are not available.")
+        if current.status != "pending":
+            if current.status == decision and current.decision_by == approver.user_id:
+                return {"approval": current, "resumed_output": None}
+            raise ValueError("Approval request is already resolved.")
         resolved: ApprovalRequest = await self.approval_store.resolve(
             approval_id=approval_id,
             decision=decision,
-            approver_user_id=approver_user_id,
+            approver_user_id=approver.user_id,
             note=note,
         )
 
         self.audit_ledger.record_event(
             event_id=f"audit_hitl_{approval_id}",
             thread_id=resolved.thread_id,
-            user_id=approver_user_id,
+            user_id=approver.user_id,
             role="admin",
-            tenant_id=self.pack.name,
+            tenant_id=approver.tenant_id,
             tool_name=resolved.tool_name,
             input_masked={"approval_id": approval_id, "decision": decision, "note": PIIMasker.mask(note, fail_closed=False)},
             decision=f"hitl_{decision}",

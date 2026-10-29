@@ -38,7 +38,7 @@ flowchart TD
 
     Admin["Quản Trị Viên (Admin)"]:::adminStyle
 
-    subgraph NestAPI ["NestJS Core API (Port 3001)"]
+    subgraph NestAPI ["NestJS Core API (Port 4000)"]
         direction TB
         UploadCtrl["Upload Controller<br/>POST /api/v1/admin/policies/upload"]:::nestStyle
         IngestProducer["IngestionProducer<br/>shared/queue & features/ingestion"]:::nestStyle

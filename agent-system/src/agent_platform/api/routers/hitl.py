@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, Request, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.state.principal import Principal
 from agent_platform.api.deps import require_role
@@ -10,12 +10,14 @@ router = APIRouter(prefix="/v1", tags=["HITL Governance"])
 
 
 class ResolveApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     decision: Literal["approved", "rejected"]
     note: str = Field(default="", max_length=500)
+    reviewer: Optional[str] = None
 
 
-@router.get("/approvals", response_model=List[ApprovalRequest])
-@router.get("/hitl/pending", response_model=List[ApprovalRequest])
+@router.get("/approvals", response_model=List[ApprovalRequest], response_model_exclude={"__all__": {"arguments"}})
+@router.get("/hitl/pending", response_model=List[ApprovalRequest], response_model_exclude={"__all__": {"arguments"}})
 async def list_pending_approvals(
     request: Request,
     admin_principal: Principal = Depends(require_role("admin")),
@@ -23,7 +25,8 @@ async def list_pending_approvals(
     """Lists all pending approval requests in the HITL queue (Admin only)."""
     harness = request.app.state.harness
     try:
-        return await harness.approval_store.list_pending()
+        pending = await harness.approval_store.list_pending()
+        return [item for item in pending if item.requester_user_id and item.requester_tenant_id == admin_principal.tenant_id]
     except PersistenceError:
         raise HTTPException(
             status_code=503,
@@ -31,8 +34,8 @@ async def list_pending_approvals(
         )
 
 
-@router.post("/approvals/{approval_id}", response_model=ApprovalRequest)
-@router.post("/hitl/{approval_id}/approve", response_model=ApprovalRequest)
+@router.post("/approvals/{approval_id}", response_model=ApprovalRequest, response_model_exclude={"arguments"})
+@router.post("/hitl/{approval_id}/approve", response_model=ApprovalRequest, response_model_exclude={"arguments"})
 async def resolve_approval(
     approval_id: str,
     request: Request,
@@ -44,18 +47,20 @@ async def resolve_approval(
     Fixes A5: Authenticated resolution with idempotency and tamper-evident audit trail.
     """
     harness = request.app.state.harness
+    if body and body.reviewer is not None and body.reviewer != admin_principal.user_id:
+        raise HTTPException(status_code=403, detail="Reviewer must match the authenticated user.")
     decision = body.decision if body else "approved"
     note = body.note if body else ""
     try:
         result = await harness.resolve_and_resume_hitl(
             approval_id=approval_id,
             decision=decision,
-            approver_user_id=admin_principal.user_id,
+            approver=admin_principal,
             note=note,
         )
         return result["approval"]
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"Approval request '{approval_id}' not found.")
+        raise HTTPException(status_code=404, detail="Approval request not found.")
     except PermissionError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
@@ -69,7 +74,7 @@ async def resolve_approval(
         )
 
 
-@router.post("/hitl/{approval_id}/reject", response_model=ApprovalRequest)
+@router.post("/hitl/{approval_id}/reject", response_model=ApprovalRequest, response_model_exclude={"arguments"})
 async def reject_approval_v1(
     approval_id: str,
     request: Request,
@@ -81,6 +86,6 @@ async def reject_approval_v1(
     return await resolve_approval(
         approval_id=approval_id,
         request=request,
-        body=ResolveApprovalRequest(decision="rejected", note=note),
+        body=ResolveApprovalRequest(decision="rejected", note=note, reviewer=body.reviewer if body else None),
         admin_principal=admin_principal,
     )
