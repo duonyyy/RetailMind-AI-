@@ -6,11 +6,13 @@ import {
   JoinColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Unique,
 } from 'typeorm';
 import { Cart } from './cart.entity';
 import { Variant } from '../../catalog/public-api';
 
 @Entity('cart_items')
+@Unique(['cartId', 'variantId'])
 export class CartItem {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -32,9 +34,9 @@ export class CartItem {
   @Column({ type: 'int', default: 1 })
   quantity: number;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }

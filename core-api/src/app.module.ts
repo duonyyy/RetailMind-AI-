@@ -7,6 +7,7 @@ import { InventoryModule } from './features/inventory/public-api';
 import { OrdersModule } from './features/orders/public-api';
 import { InternalAgentModule } from './features/internal-agent/public-api';
 import { AuthModule } from './features/auth/public-api';
+import { CartModule } from './features/cart/public-api';
 import { RedisModule } from './shared/redis/redis.module';
 import { MinioStorageModule } from './shared/storage/minio.module';
 import { QueueConfigModule } from './shared/queue/queue.module';
@@ -48,6 +49,7 @@ const isDbEnabled = process.env.ENABLE_POSTGRES === 'true';
     OrdersModule,
     InternalAgentModule,
     AuthModule,
+    CartModule,
     IngestionFeatureModule,
     CustomersModule,
     KnowledgeModule,

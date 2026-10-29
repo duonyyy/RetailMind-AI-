@@ -5,6 +5,7 @@ import { Inventory } from '../features/inventory/entities/inventory.entity';
 import { Order } from '../features/orders/entities/order.entity';
 import { OrderItem } from '../features/orders/entities/order-item.entity';
 import { IdempotencyKey } from '../features/orders/entities/idempotency-key.entity';
+import { Cart, CartItem } from '../features/cart/public-api';
 
 // --- Baseline Fixture Data conforming to RetailMind AI / MWG seed standards ---
 
@@ -258,6 +259,8 @@ export function createMockDataSource(options: MockDbOptions = {}) {
   const ordersStore = new Map<string, Order>();
   const orderItemsStore: OrderItem[] = [];
   const idempotencyStore = new Map<string, IdempotencyKey>();
+  const cartsStore = new Map<string, Cart>();
+  const cartItemsStore = new Map<string, CartItem>();
 
   function resolveStoreRef(ref: string): MockStoreRecord | undefined {
     const cleanRef = ref.trim().toLowerCase();
@@ -350,6 +353,27 @@ export function createMockDataSource(options: MockDbOptions = {}) {
           const id = opts?.where?.id;
           return ordersStore.get(id) || null;
         }
+        if (entityClass === Cart) {
+          const custId = opts?.where?.customerId;
+          const status = opts?.where?.status || 'active';
+          for (const c of cartsStore.values()) {
+            if (c.customerId === custId && c.status === status) {
+              const items = [...cartItemsStore.values()].filter((it) => it.cartId === c.id);
+              for (const it of items) {
+                if (!it.variant) {
+                  it.variant = variants.find((v) => v.id === it.variantId) || variants[0];
+                }
+              }
+              c.items = items;
+              return c;
+            }
+          }
+          return null;
+        }
+        if (entityClass === CartItem) {
+          const id = opts?.where?.id;
+          return cartItemsStore.get(id) || null;
+        }
         return null;
       }),
 
@@ -357,6 +381,10 @@ export function createMockDataSource(options: MockDbOptions = {}) {
         if (entityClass === OrderItem) {
           const orderId = opts?.where?.order_id;
           return orderItemsStore.filter((i) => i.order_id === orderId);
+        }
+        if (entityClass === CartItem) {
+          const cartId = opts?.where?.cartId;
+          return [...cartItemsStore.values()].filter((i) => !cartId || i.cartId === cartId);
         }
         return [];
       }),
@@ -385,8 +413,25 @@ export function createMockDataSource(options: MockDbOptions = {}) {
           const rec = getStockRecord(entity.store_id, entity.variant_id);
           rec.onHand = entity.on_hand_qty;
           rec.reserved = entity.reserved_qty;
+        } else if (entity instanceof Cart) {
+          cartsStore.set(entity.id, entity);
+        } else if (entity instanceof CartItem) {
+          if (!entity.variant) {
+            entity.variant = variants.find((v) => v.id === entity.variantId) || variants[0];
+          }
+          cartItemsStore.set(entity.id, entity);
         }
         return entity;
+      }),
+
+      delete: jest.fn().mockImplementation(async (target: any) => {
+        if (typeof target === 'string') {
+          cartItemsStore.delete(target);
+        } else if (target?.cartId) {
+          for (const [id, it] of cartItemsStore.entries()) {
+            if (it.cartId === target.cartId) cartItemsStore.delete(id);
+          }
+        }
       }),
 
       createQueryBuilder: jest.fn().mockImplementation((entityClass: any, alias: string) => {
@@ -499,6 +544,76 @@ export function createMockDataSource(options: MockDbOptions = {}) {
           find: jest.fn().mockImplementation(async (opts: any) => {
             const orderId = opts?.where?.order_id;
             return orderItemsStore.filter((i) => i.order_id === orderId);
+          }),
+        };
+      }
+      if (entityClass === Cart) {
+        return {
+          findOne: jest.fn().mockImplementation(async (opts: any) => {
+            const custId = opts?.where?.customerId;
+            const status = opts?.where?.status || 'active';
+            for (const c of cartsStore.values()) {
+              if (c.customerId === custId && c.status === status) {
+                const items = [...cartItemsStore.values()].filter((it) => it.cartId === c.id);
+                for (const it of items) {
+                  if (!it.variant) {
+                    it.variant = variants.find((v) => v.id === it.variantId) || variants[0];
+                  }
+                }
+                c.items = items;
+                return c;
+              }
+            }
+            return null;
+          }),
+          create: jest.fn().mockImplementation((plain: any) => {
+            const c = new Cart();
+            Object.assign(c, plain);
+            if (!c.id) c.id = `mock-cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            if (!c.items) c.items = [];
+            return c;
+          }),
+          save: jest.fn().mockImplementation(async (c: Cart) => {
+            cartsStore.set(c.id, c);
+            return c;
+          }),
+        };
+      }
+      if (entityClass === CartItem) {
+        return {
+          findOne: jest.fn().mockImplementation(async (opts: any) => {
+            const id = opts?.where?.id;
+            return cartItemsStore.get(id) || null;
+          }),
+          find: jest.fn().mockImplementation(async (opts: any) => {
+            const cartId = opts?.where?.cartId;
+            return [...cartItemsStore.values()].filter((i) => !cartId || i.cartId === cartId);
+          }),
+          create: jest.fn().mockImplementation((plain: any) => {
+            const item = new CartItem();
+            Object.assign(item, plain);
+            if (!item.id) item.id = `mock-cart-item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            if (!item.variant) {
+              item.variant = variants.find((v) => v.id === item.variantId) || variants[0];
+            }
+            return item;
+          }),
+          save: jest.fn().mockImplementation(async (item: CartItem) => {
+            if (!item.variant) {
+              item.variant = variants.find((v) => v.id === item.variantId) || variants[0];
+            }
+            cartItemsStore.set(item.id, item);
+            return item;
+          }),
+          delete: jest.fn().mockImplementation(async (target: any) => {
+            if (typeof target === 'string') {
+              cartItemsStore.delete(target);
+            } else if (target?.cartId) {
+              for (const [id, it] of cartItemsStore.entries()) {
+                if (it.cartId === target.cartId) cartItemsStore.delete(id);
+              }
+            }
+            return { affected: 1 };
           }),
         };
       }

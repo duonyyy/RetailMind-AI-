@@ -16,15 +16,15 @@ export class Cart {
   @Column({ name: 'customer_id', type: 'uuid' })
   customerId: string;
 
-  @Column({ type: 'varchar', length: 20, default: 'active' })
+  @Column({ type: 'varchar', length: 32, default: 'active' })
   status: string;
 
   @OneToMany(() => CartItem, (item) => item.cart, { cascade: true })
   items: CartItem[];
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }

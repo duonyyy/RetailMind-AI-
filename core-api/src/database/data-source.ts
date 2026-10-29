@@ -20,8 +20,8 @@ import { Inventory } from '../features/inventory/entities/inventory.entity';
 import { Favorite } from '../features/customers/entities/favorite.entity';
 
 // 5. Commerce & Orders (5)
-import { Cart } from '../features/orders/entities/cart.entity';
-import { CartItem } from '../features/orders/entities/cart-item.entity';
+import { Cart } from '../features/cart/entities/cart.entity';
+import { CartItem } from '../features/cart/entities/cart-item.entity';
 import { Order } from '../features/orders/entities/order.entity';
 import { OrderItem } from '../features/orders/entities/order-item.entity';
 import { IdempotencyKey } from '../features/orders/entities/idempotency-key.entity';

@@ -7,6 +7,7 @@ import { OrdersModule } from '../orders/public-api';
 import { KnowledgeModule } from '../knowledge/public-api';
 import { SupportModule } from '../support/public-api';
 import { CustomersModule } from '../customers/public-api';
+import { CartModule } from '../cart/public-api';
 
 import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
 
@@ -18,6 +19,7 @@ import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
     KnowledgeModule,
     SupportModule,
     CustomersModule,
+    CartModule,
   ],
   controllers: [InternalAgentController],
   providers: [InternalAgentService, InternalSecretGuard],

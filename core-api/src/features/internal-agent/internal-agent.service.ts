@@ -10,6 +10,7 @@ import { OrdersService } from '../orders/public-api';
 import { KnowledgeService } from '../knowledge/public-api';
 import { SupportService } from '../support/public-api';
 import { CustomersService } from '../customers/public-api';
+import { CartService } from '../cart/public-api';
 import Decimal from 'decimal.js';
 
 export interface CartItemRecord {
@@ -42,6 +43,7 @@ export class InternalAgentService {
     @Optional() private readonly knowledgeService?: KnowledgeService,
     @Optional() private readonly supportService?: SupportService,
     @Optional() private readonly customersService?: CustomersService,
+    @Optional() private readonly cartService?: CartService,
   ) {}
 
   /**
@@ -191,9 +193,28 @@ export class InternalAgentService {
   }
 
   /**
-   * Tool 6: Xem giỏ hàng của khách hàng
-   */
+  * Tool 6: Xem giỏ hàng của khách hàng
+  */
   async viewCart(customerId: string) {
+    if (this.cartService) {
+      try {
+        const cart = await this.cartService.getCart(customerId);
+        return {
+          customer_id: customerId,
+          total_items: cart.itemsCount,
+          subtotal_vnd: cart.subtotalVnd,
+          formatted_subtotal: cart.formattedTotal,
+          items: cart.items.map((i) => ({
+            sku: i.sku,
+            name: i.name,
+            quantity: i.quantity,
+            unitPriceVnd: i.unitPriceVnd,
+          })),
+        };
+      } catch {
+        // Fallback to memory
+      }
+    }
     const items = this.carts.get(customerId) || [];
     let subtotal = new Decimal(0);
     for (const item of items) {
@@ -213,13 +234,28 @@ export class InternalAgentService {
    */
   async addToCart(
     customerId: string,
-    args: { sku?: string; variant_id?: string; quantity?: number },
+    args: { sku?: string; variant_id?: string; quantity?: number; store_id?: string },
   ) {
     const targetSku = args.sku || args.variant_id;
     if (!targetSku) {
       throw new BadRequestException('Mã SKU hoặc variant_id là bắt buộc.');
     }
     const qty = args.quantity && args.quantity > 0 ? args.quantity : 1;
+    if (this.cartService) {
+      try {
+        await this.cartService.addItem(customerId, { sku: targetSku, quantity: qty, storeId: args.store_id });
+        return {
+          status: 'success',
+          message: `Đã thêm ${qty} sản phẩm [${targetSku}] vào giỏ hàng.`,
+          cart: await this.viewCart(customerId),
+        };
+      } catch (err: any) {
+        if (err.status === 400 || err.status === 404 || err.status === 409) {
+          throw err;
+        }
+      }
+    }
+
     const product = await this.catalogService.getProductBySku(targetSku);
     if (!product) {
       throw new NotFoundException(`Sản phẩm ${targetSku} không tồn tại trong danh mục.`);
@@ -251,6 +287,19 @@ export class InternalAgentService {
    */
   async removeFromCart(customerId: string, args: { sku?: string; variant_id?: string }) {
     const targetSku = args.sku || args.variant_id;
+    if (this.cartService && targetSku) {
+      try {
+        await this.cartService.removeItem(customerId, targetSku);
+        return {
+          status: 'success',
+          message: `Đã xóa sản phẩm ${targetSku} khỏi giỏ hàng.`,
+          cart: await this.viewCart(customerId),
+        };
+      } catch (err: any) {
+        if (err.status === 404) throw err;
+      }
+    }
+
     const currentItems = this.carts.get(customerId) || [];
     const updatedItems = currentItems.filter((it) => it.sku !== targetSku);
     this.carts.set(customerId, updatedItems);
