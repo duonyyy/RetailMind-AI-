@@ -10,8 +10,10 @@ from agent_platform.harness.persistence.checkpointer import (
     PersistentCheckpointer,
     create_checkpointer,
 )
+from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.state.principal import Principal
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata
+from langgraph.checkpoint.memory import MemorySaver
 
 
 @pytest.fixture
@@ -92,15 +94,15 @@ def test_sqlite_adapter_checkpointer_persistence(tmp_path):
 
 
 def test_postgres_adapter_resilient_fallback():
+    """PostgreSQL adapter must fail-closed (never fall back to MemorySaver) on both async and sync paths."""
     async def _run():
         settings = PlatformSettings()
         settings.persistence.adapter = "postgres"
-        settings.persistence.postgres_url = "postgresql://invalid_user:invalid_pass@127.0.0.1:59999/nonexistent"
+        settings.persistence.postgres_url = "postgresql://invalid_user:super_secret_pw_99@127.0.0.1:59999/nonexistent"
 
         checkpointer = create_checkpointer(settings)
         assert checkpointer.adapter_type == "postgres"
 
-        # Should not raise exception; falls back gracefully to MemorySaver
         config = {"configurable": {"thread_id": "thread_pg_fb", "checkpoint_ns": ""}}
         checkpoint: Checkpoint = {
             "v": 1,
@@ -113,16 +115,22 @@ def test_postgres_adapter_resilient_fallback():
         }
         metadata: CheckpointMetadata = {"source": "input", "step": 1, "writes": {}, "score": 1}
 
-        await checkpointer.aput(config, checkpoint, metadata, {"resilient": 1})
-        tuple_res = await checkpointer.aget_tuple(config)
-        assert tuple_res is not None
-        assert tuple_res.checkpoint["channel_values"]["resilient"] is True
+        with pytest.raises(PersistenceError) as exc_info:
+            await checkpointer.aput(config, checkpoint, metadata, {"resilient": 1})
+        assert "super_secret_pw_99" not in str(exc_info.value)
+        assert not isinstance(checkpointer._target, MemorySaver)
+
+        with pytest.raises(PersistenceError) as sync_exc_info:
+            checkpointer.put(config, checkpoint, metadata, {"resilient": 1})
+        assert "super_secret_pw_99" not in str(sync_exc_info.value)
+        assert not isinstance(checkpointer._target, MemorySaver)
         await checkpointer.aclose()
 
     asyncio.run(_run())
 
 
 def test_redis_adapter_resilient_fallback():
+    """Redis adapter must fail-closed (never fall back to MemorySaver) when unreachable."""
     async def _run():
         settings = PlatformSettings()
         settings.persistence.adapter = "redis"
@@ -131,7 +139,6 @@ def test_redis_adapter_resilient_fallback():
         checkpointer = create_checkpointer(settings)
         assert checkpointer.adapter_type == "redis"
 
-        # Should not raise exception; falls back gracefully to MemorySaver
         config = {"configurable": {"thread_id": "thread_redis_fb", "checkpoint_ns": ""}}
         checkpoint: Checkpoint = {
             "v": 1,
@@ -144,10 +151,9 @@ def test_redis_adapter_resilient_fallback():
         }
         metadata: CheckpointMetadata = {"source": "input", "step": 1, "writes": {}, "score": 1}
 
-        await checkpointer.aput(config, checkpoint, metadata, {"redis_fallback": 1})
-        tuple_res = await checkpointer.aget_tuple(config)
-        assert tuple_res is not None
-        assert tuple_res.checkpoint["channel_values"]["redis_fallback"] is True
+        with pytest.raises(PersistenceError):
+            await checkpointer.aput(config, checkpoint, metadata, {"redis_fallback": 1})
+        assert not isinstance(checkpointer._target, MemorySaver)
         await checkpointer.aclose()
 
     asyncio.run(_run())
@@ -185,5 +191,6 @@ def test_agent_harness_integration_with_persistent_checkpointer(tmp_path, mock_p
             {"configurable": {"thread_id": "persistent_thread_101", "checkpoint_ns": ""}}
         )
         assert cp_tuple is not None
+        await harness.aclose()
 
     asyncio.run(_run())

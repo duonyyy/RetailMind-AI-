@@ -309,21 +309,29 @@ def test_sprint1_all_15_retail_tools_and_no_confirm_order(monkeypatch):
 
 
 def test_sprint3_postgres_and_redis_persistence_adapters():
-    """Sprint 3 Verification: PostgresKVStore and RedisKVStore adhere to KVStorePort contract."""
+    """Sprint 3 Verification: PostgresKVStore fails closed without DSN; RedisKVStore adheres to KVStorePort."""
+    import pytest
+    from agent_platform.harness.persistence.ports import PersistenceError
     from agent_platform.harness.persistence.postgres import PostgresKVStore
     from agent_platform.harness.persistence.redis import RedisKVStore
 
     async def _run():
-        for store in (PostgresKVStore(), RedisKVStore()):
-            await store.set("session:01", {"user": "cust_01", "total": "17990000"}, ttl_seconds=60)
-            fetched = await store.get("session:01")
-            assert fetched == {"user": "cust_01", "total": "17990000"}
+        pg_unconfigured = PostgresKVStore()
+        with pytest.raises(PersistenceError):
+            await pg_unconfigured.set("session:01", {"user": "cust_01"})
+        with pytest.raises(PersistenceError):
+            await pg_unconfigured.get("session:01")
 
-            keys = await store.list_keys("session:")
-            assert "session:01" in keys
+        store = RedisKVStore()
+        await store.set("session:01", {"user": "cust_01", "total": "17990000"}, ttl_seconds=60)
+        fetched = await store.get("session:01")
+        assert fetched == {"user": "cust_01", "total": "17990000"}
 
-            deleted = await store.delete("session:01")
-            assert deleted is True
-            assert await store.get("session:01") is None
+        keys = await store.list_keys("session:")
+        assert "session:01" in keys
+
+        deleted = await store.delete("session:01")
+        assert deleted is True
+        assert await store.get("session:01") is None
 
     asyncio.run(_run())
