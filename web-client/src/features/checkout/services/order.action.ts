@@ -57,19 +57,22 @@ export async function confirmOrderAction(
   }
 
   const orderData = res.data?.data || res.data;
+  if (!orderData?.orderNo || !orderData?.orderId || !orderData?.storeId || typeof orderData.totalVnd !== 'string' || !orderData.confirmedAt) {
+    throw new Error('Không nhận được biên nhận đơn hàng hợp lệ từ hệ thống.');
+  }
 
   const receipt: ConfirmedOrderReceipt = {
-    orderNo: orderData.orderNo || `MWG-${Date.now()}`,
-    orderId: orderData.orderId || `ord-${Date.now()}`,
+    orderNo: orderData.orderNo,
+    orderId: orderData.orderId,
     status: orderData.status === 'confirmed' ? 'confirmed' : 'placed',
     storeId: orderData.storeId || payload.storeId,
     storeName: STORE_NAMES[orderData.storeId || payload.storeId] || payload.storeId,
     deliveryMode: payload.deliveryMode,
     paymentMethod: payload.paymentMethod,
-    totalVnd: orderData.totalVnd || '0',
+    totalVnd: orderData.totalVnd,
     formattedTotal: orderData.formattedTotal || `${orderData.totalVnd} ₫`,
     itemsCount: orderData.itemsCount || payload.items.length,
-    confirmedAt: orderData.confirmedAt || new Date().toISOString(),
+    confirmedAt: orderData.confirmedAt,
     idempotencyKey,
   };
 

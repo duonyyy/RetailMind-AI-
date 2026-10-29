@@ -74,14 +74,10 @@ export default function Home() {
     {
       role: 'assistant',
       content:
-        'Xin chào quý khách! Tôi là RetailMind AI — Trợ lý Trí tuệ Bán lẻ MWG. Tôi có thể hỗ trợ tư vấn chọn mua laptop học tập / đồ họa / văn phòng, kiểm tra tồn kho tức thời tại chuỗi siêu thị, và giải đáp chính xác chính sách bảo hành, đổi trả miễn phí 30 ngày.',
+        'Xin chào! Tôi là trợ lý RetailMind. Vui lòng đặt câu hỏi; các thông tin cần tài liệu sẽ chỉ được trả lời khi có căn cứ xác minh.',
     },
   ]);
-  const [thoughtTrace, setThoughtTrace] = useState<string[]>([
-    '[LỚP 0 - RATE LIMITER] Khởi tạo cửa sổ trượt 30 req/phút an toàn.',
-    '[LỚP 1 - SEMANTIC CACHE] Nạp chỉ mục L1 Vector Cache (<5ms, $0 token).',
-    '[LỚP 4 - LLM HARNESS] Sẵn sàng với LangGraph Cyclic Multi-Agent & Critic Verification.',
-  ]);
+  const [thoughtTrace, setThoughtTrace] = useState<string[]>([]);
   const [currentCitations, setCurrentCitations] = useState<CitationItem[]>([]);
   const [currentGrounding, setCurrentGrounding] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -277,7 +273,7 @@ export default function Home() {
                 setCurrentCitations(streamCitations);
               } else if (data.type === 'answer') {
                 streamAnswer = data.content;
-                streamGrounding = data.grounding_score ?? 0.95;
+                streamGrounding = data.grounding_score ?? null;
                 setCurrentGrounding(streamGrounding);
               } else if (data.type === 'hitl_pending') {
                 setHitlTasks(prev => [
@@ -309,56 +305,12 @@ export default function Home() {
             role: 'assistant',
             content: streamAnswer,
             citations: streamCitations,
-            groundingScore: streamGrounding || 0.95,
+            groundingScore: streamGrounding ?? undefined,
           },
         ]);
       }
     } catch {
-      // Fallback response with offline knowledge
-      let fallbackAns = '';
-      const qLower = textToSend.toLowerCase();
-
-      if (qLower.includes('dưới 20 triệu') || qLower.includes('ram 16') || qLower.includes('laptop')) {
-        fallbackAns =
-          'Theo danh mục sản phẩm MWG 2026, các dòng laptop học tập - văn phòng dưới 20 triệu VNĐ trang bị RAM 16GB tối ưu bao gồm:\n\n' +
-          '1. Asus Vivobook 15 OLED A1505VA (Core i5-13500H, RAM 16GB, SSD 512GB) — Giá: 17.990.000 ₫\n' +
-          '2. Dell Inspiron 14 5430 (Core i5-1335U, RAM 16GB, SSD 512GB) — Giá: 18.490.000 ₫\n' +
-          '3. Lenovo ThinkBook 14 G6+ (Core Ultra 5 125H AI NPU, RAM 16GB, SSD 512GB) — Giá: 19.990.000 ₫\n\n' +
-          'Tất cả sản phẩm đều được áp dụng chính sách đổi mới 30 ngày nếu lỗi kỹ thuật và bảo hành chính hãng đến 24 tháng.';
-      } else if (qLower.includes('đổi trả') || qLower.includes('bảo hành') || qLower.includes('30 ngày')) {
-        fallbackAns =
-          'Căn cứ theo Chính sách Bảo hành & Đổi trả MWG (Điều 1):\n' +
-          '- Sản phẩm lỗi kỹ thuật do nhà sản xuất được đổi mới hoàn toàn MIỄN PHÍ trong vòng 30 ngày đầu tiên.\n' +
-          '- Bảo hành chính hãng 24 tháng tại các trung tâm bảo hành ủy quyền trên toàn quốc.\n' +
-          '- Yêu cầu: Giữ nguyên vỏ hộp, tem mác và hóa đơn mua hàng hợp lệ.';
-      } else if (qLower.includes('phạt') || qLower.includes('điều 301') || qLower.includes('hợp đồng')) {
-        fallbackAns =
-          'Căn cứ theo Điều 301 Luật Thương Mại 2005 về Mức phạt vi phạm nghĩa vụ hợp đồng:\n' +
-          'Mức phạt đối với vi phạm nghĩa vụ hợp đồng hoặc tổng mức phạt đối với nhiều vi phạm do các bên thoả thuận trong hợp đồng, nhưng không quá 8% giá trị phần nghĩa vụ hợp đồng bị vi phạm.';
-      } else {
-        fallbackAns =
-          'Tôi đã tiếp nhận yêu cầu của quý khách. Hệ thống áp dụng quy chuẩn chân lý duy nhất (SSOT) và bảo vệ an toàn PII theo Nghị định 13/2023/NĐ-CP.';
-      }
-
-      setThoughtTrace(prev => [
-        ...prev,
-        '[FALLBACK LADDER TIER 4] Kích hoạt cơ chế suy luận dự phòng an toàn (Zero-500 Guarantee).',
-      ]);
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: fallbackAns,
-          citations: [
-            {
-              title: 'Chính sách Bán lẻ & Quy chế Vận hành MWG 2026',
-              statute: 'Điều 1 & Điều 5',
-              page: 3,
-            },
-          ],
-          groundingScore: 1.0,
-        },
-      ]);
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Hiện không thể kết nối trợ lý hoặc xác minh tài liệu. Vui lòng thử lại sau.' }]);
     } finally {
       setIsLoading(false);
     }
@@ -594,7 +546,7 @@ export default function Home() {
                           {m.groundingScore !== undefined && m.groundingScore !== null && (
                             <span className="ts-badge-success flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold">
                               <CheckCircle2 className="h-3 w-3" />
-                              Grounding: {(m.groundingScore * 100).toFixed(0)}% (Faithfulness Đạt)
+                              Điểm tham khảo: {(m.groundingScore * 100).toFixed(0)}%
                             </span>
                           )}
                           {m.citations?.map((cit, cIdx) => (

@@ -1,14 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BrandSectionBackground } from '@/components/patterns';
-import { PreviewTokenCountdown } from '@/features/checkout/components/PreviewTokenCountdown';
-import { calculateExactOrderPreview } from '@/features/checkout/services/preview-token.get';
+import { apiFetch } from '@/lib/api-client';
+import { formatVND } from '@/lib/utils';
 import { confirmOrderAction } from '@/features/checkout/services/order.action';
 import { ConfirmedOrderReceipt } from '@/features/checkout/types';
 import { SimulatedQRPaymentModal } from '@/features/checkout/components/SimulatedQRPaymentModal';
-import { BASELINE_LAPTOP_CATALOG } from '@/features/catalog/services/catalog.get';
+
 import {
   Building2,
   Truck,
@@ -22,10 +22,10 @@ import {
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const [selectedSku, setSelectedSku] = useState('LT-ASUS-VIVO15-OLED');
+  const [selectedSku, setSelectedSku] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [deliveryMode, setDeliveryMode] = useState<'STORE_PICKUP' | 'HOME_DELIVERY'>('STORE_PICKUP');
-  const [selectedStoreId, setSelectedStoreId] = useState('store-hcm-q1');
+  const [selectedStoreId, setSelectedStoreId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'QR_NAPAS247' | 'CARD'>('QR_NAPAS247');
   const [discountCode, setDiscountCode] = useState('MWG_VIP500');
   const [customerName, setCustomerName] = useState('Trần Khách Hàng');
@@ -38,25 +38,41 @@ export default function CheckoutPage() {
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [confirmedReceipt, setConfirmedReceipt] = useState<ConfirmedOrderReceipt | null>(null);
 
-  const selectedProduct =
-    BASELINE_LAPTOP_CATALOG.find((l) => l.sku === selectedSku) || BASELINE_LAPTOP_CATALOG[0];
+  const [products, setProducts] = useState<Array<{sku: string; name: string; formattedPrice: string}>>([]);
+  const [stores, setStores] = useState<Array<{id: string; name: string}>>([]);
+  const [preview, setPreview] = useState<{previewToken: string; subtotalVnd: string; discountVnd: string; vatVnd: string; totalVnd: string} | null>(null);
 
-  const preview = calculateExactOrderPreview(
-    [
-      {
-        sku: selectedProduct.sku,
-        name: selectedProduct.name,
-        unitPriceVnd: selectedProduct.priceVnd,
-        quantity,
-        stockMax: selectedProduct.totalAvailableStock,
-      },
-    ],
-    discountCode
-  );
+  useEffect(() => {
+    let active = true;
+    Promise.all([apiFetch<any>('catalog/products'), apiFetch<any>('inventory/stores')]).then(([catalog, locations]) => {
+      if (!active) return;
+      const productRows = catalog.data?.data;
+      const storeRows = locations.data?.data;
+      if (!catalog.success || !locations.success || !Array.isArray(productRows) || !Array.isArray(storeRows)) {
+        setCheckoutError('Không thể tải danh mục hoặc cửa hàng. Vui lòng thử lại.'); return;
+      }
+      setProducts(productRows); setStores(storeRows);
+      setSelectedSku(productRows[0]?.sku || ''); setSelectedStoreId(storeRows[0]?.id || '');
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setPreview(null);
+    if (!selectedSku || !selectedStoreId || !Number.isSafeInteger(quantity) || quantity < 1) return () => { active = false; };
+    apiFetch<any>('orders/preview', { method: 'POST', body: JSON.stringify({ storeId: selectedStoreId, items: [{sku: selectedSku, quantity}], discountCode }), retries: 0 }).then(result => {
+      if (!active) return;
+      const data = result.data?.data;
+      if (!result.success || !data?.previewToken) { setCheckoutError(result.error?.message || 'Không thể lấy giá từ hệ thống.'); return; }
+      setCheckoutError(null); setPreview(data);
+    });
+    return () => { active = false; };
+  }, [selectedSku, selectedStoreId, quantity, discountCode]);
 
   const handleConfirmOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitting || !preview) return;
     setIsSubmitting(true);
     setCheckoutError(null);
 
@@ -138,11 +154,10 @@ export default function CheckoutPage() {
             <span>Đặt Hàng Đa Bước &amp; Khóa Tồn Bi Quan (SCR-08 • UC03/UC06)</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Thực thi khóa dòng bi quan <code className="font-mono">SELECT ... FOR UPDATE</code> và bảo vệ chống bấm đúp 100% qua <code className="font-mono">Idempotency-Key</code>.
+            Giá và cửa hàng được lấy từ hệ thống; tồn kho được kiểm tra khi xác nhận.
           </p>
         </div>
 
-        <PreviewTokenCountdown initialSeconds={600} />
       </div>
 
       <form onSubmit={handleConfirmOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -159,10 +174,10 @@ export default function CheckoutPage() {
                 <label className="font-semibold text-slate-700 block mb-1">Mẫu Laptop:</label>
                 <select
                   value={selectedSku}
-                  onChange={(e) => setSelectedSku(e.target.value)}
+                  onChange={(e) => { setPreview(null); setSelectedSku(e.target.value); }}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-semibold"
                 >
-                  {BASELINE_LAPTOP_CATALOG.map((l) => (
+                  {products.map((l) => (
                     <option key={l.sku} value={l.sku}>
                       {l.name} — {l.formattedPrice}
                     </option>
@@ -176,7 +191,7 @@ export default function CheckoutPage() {
                   min={1}
                   max={5}
                   value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
+                  onChange={(e) => { setPreview(null); setQuantity(Math.max(1, Number(e.target.value))); }}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-bold tabular-nums"
                 />
               </div>
@@ -218,20 +233,20 @@ export default function CheckoutPage() {
 
             {deliveryMode === 'STORE_PICKUP' ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-                {selectedProduct.branches.map((st) => (
+                {stores.map((st) => (
                   <button
-                    key={st.storeId}
+                    key={st.id}
                     type="button"
-                    onClick={() => setSelectedStoreId(st.storeId)}
+                    onClick={() => { if (st.id !== selectedStoreId) { setPreview(null); setSelectedStoreId(st.id); } }}
                     className={`p-3 rounded-xl border text-left text-xs transition ${
-                      selectedStoreId === st.storeId
+                      selectedStoreId === st.id
                         ? 'border-blue-600 bg-blue-50/60'
                         : 'border-slate-200 bg-slate-50 hover:border-slate-300'
                     }`}
                   >
                     <div className="font-bold text-slate-900">{st.name}</div>
                     <div className="text-[11px] text-emerald-700 font-bold mt-1 tabular-nums">
-                      ✓ Khả dụng: {st.availableQty} máy
+                      Kiểm tra tồn kho khi xác nhận
                     </div>
                   </button>
                 ))}
@@ -327,27 +342,27 @@ export default function CheckoutPage() {
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between text-slate-600">
                 <span>Tạm tính ({quantity} máy):</span>
-                <span className="font-bold text-slate-900 tabular-nums">{preview.formattedSubtotal}</span>
+                <span className="font-bold text-slate-900 tabular-nums">{preview ? formatVND(preview.subtotalVnd) : 'Đang tải'}</span>
               </div>
               <div className="flex justify-between text-emerald-700">
                 <span>Voucher ({discountCode}):</span>
-                <span className="font-bold tabular-nums">-{preview.formattedDiscount}</span>
+                <span className="font-bold tabular-nums">-{preview ? formatVND(preview.discountVnd) : 'Đang tải'}</span>
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>Thuế GTGT (VAT 10%):</span>
-                <span className="font-bold text-slate-900 tabular-nums">+{preview.formattedVat}</span>
+                <span className="font-bold text-slate-900 tabular-nums">+{preview ? formatVND(preview.vatVnd) : 'Đang tải'}</span>
               </div>
               <div className="pt-3 border-t border-slate-200 flex justify-between text-sm font-bold">
                 <span className="text-slate-900">Tổng thanh toán:</span>
                 <span className="text-blue-600 text-lg font-extrabold tabular-nums">
-                  {preview.formattedGrandTotal}
+                  {preview ? formatVND(preview.totalVnd) : 'Đang tải'}
                 </span>
               </div>
             </div>
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !preview}
               className="ts-cta w-full py-3.5 text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isSubmitting ? (

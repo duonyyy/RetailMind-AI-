@@ -15,17 +15,12 @@ export function useAgentChat(initialHitlTasks: HitlTaskItem[] = []) {
       id: 'msg-welcome',
       role: 'assistant',
       content:
-        'Xin chào quý khách! Tôi là RetailMind AI — Trợ lý Trí tuệ Bán lẻ MWG. Tôi có thể hỗ trợ tư vấn chọn mua laptop học tập / đồ họa / văn phòng, kiểm tra tồn kho tức thời tại chuỗi siêu thị, và giải đáp chính xác chính sách bảo hành, đổi trả miễn phí 30 ngày.',
+        'Xin chào! Tôi là trợ lý RetailMind. Vui lòng đặt câu hỏi; các thông tin cần tài liệu sẽ chỉ được trả lời khi có căn cứ xác minh.',
       timestamp: 'Vừa xong',
     },
   ]);
 
-  const [thoughtTrace, setThoughtTrace] = useState<string[]>([
-    '[LỚP 0 - RATE LIMITER] Khởi tạo cửa sổ trượt 30 req/phút an toàn.',
-    '[LỚP 1 - SEMANTIC CACHE] Nạp chỉ mục L1 Vector Cache (<5ms, $0 token).',
-    '[LỚP 4 - LLM HARNESS] Sẵn sàng với LangGraph StateGraph & Two-Way Citation Verification.',
-  ]);
-
+  const [thoughtTrace, setThoughtTrace] = useState<string[]>([]);
   const [currentCitations, setCurrentCitations] = useState<CitationItem[]>([]);
   const [currentGrounding, setCurrentGrounding] = useState<number | null>(null);
   const [hitlTasks, setHitlTasks] = useState<HitlTaskItem[]>(initialHitlTasks);
@@ -84,7 +79,7 @@ export function useAgentChat(initialHitlTasks: HitlTaskItem[] = []) {
                   setCurrentCitations(streamCitations);
                 } else if (data.type === 'answer') {
                   streamAnswer = data.content;
-                  streamGrounding = data.grounding_score ?? 0.96;
+                  streamGrounding = data.grounding_score ?? null;
                   setCurrentGrounding(streamGrounding);
                 } else if (data.type === 'hitl_pending') {
                   setHitlTasks((prev) => [
@@ -117,7 +112,7 @@ export function useAgentChat(initialHitlTasks: HitlTaskItem[] = []) {
               role: 'assistant',
               content: streamAnswer,
               citations: streamCitations,
-              groundingScore: streamGrounding || 0.96,
+              groundingScore: streamGrounding ?? undefined,
               timestamp: new Date().toLocaleTimeString('vi-VN', {
                 hour: '2-digit',
                 minute: '2-digit',
@@ -128,93 +123,11 @@ export function useAgentChat(initialHitlTasks: HitlTaskItem[] = []) {
           throw new Error('Empty stream answer');
         }
       } catch {
-        const qLower = textToSend.toLowerCase();
-        let fallbackAns = '';
-        let suggestedProducts = undefined;
-
-        if (qLower.includes('dưới 20 triệu') || qLower.includes('ram 16') || qLower.includes('laptop')) {
-          fallbackAns =
-            'Theo danh mục sản phẩm MWG 2026 (PostgreSQL SSOT), các dòng laptop học tập - văn phòng dưới 20 triệu VNĐ trang bị RAM 16GB tối ưu nhất hiện có sẵn tại kho bao gồm:\n\n' +
-            '1. Asus Vivobook 15 OLED A1505VA (Core i5-13500H, RAM 16GB, SSD 512GB) — Giá: 17.990.000 ₫ (Còn 12 máy tại Q1)\n' +
-            '2. Dell Inspiron 14 5430 (Core i5-1335U, RAM 16GB, SSD 512GB) — Giá: 18.490.000 ₫ (Còn 8 máy tại Q1)\n' +
-            '3. Lenovo ThinkBook 14 G6+ (Core Ultra 5 125H AI NPU, RAM 16GB, SSD 512GB) — Giá: 19.990.000 ₫ (Còn 7 máy tại Q1)\n\n' +
-            'Tất cả sản phẩm đều áp dụng chính sách đổi mới miễn phí 30 ngày nếu lỗi kỹ thuật nhà sản xuất và bảo hành chính hãng 24 tháng.';
-          suggestedProducts = [
-            {
-              sku: 'LT-ASUS-VIVO15-OLED',
-              name: 'Asus Vivobook 15 OLED A1505VA',
-              priceFormatted: '17.990.000 ₫',
-              ramGb: 16,
-              branchStock: 12,
-            },
-            {
-              sku: 'LT-LENOVO-TB14-G6',
-              name: 'Lenovo ThinkBook 14 G6+ AI PC',
-              priceFormatted: '19.990.000 ₫',
-              ramGb: 16,
-              branchStock: 7,
-            },
-          ];
-        } else if (qLower.includes('đổi trả') || qLower.includes('bảo hành') || qLower.includes('30 ngày')) {
-          fallbackAns =
-            'Căn cứ theo Chính sách Bảo hành & Đổi trả MWG 2026 (Điều 1 & Điều 3):\n' +
-            '- Sản phẩm lỗi kỹ thuật do nhà sản xuất được đổi máy mới tương đương MIỄN PHÍ 100% trong vòng 30 ngày đầu tiên kể từ ngày nhận hàng.\n' +
-            '- Bảo hành chính hãng 24 tháng tại toàn bộ trung tâm bảo hành ủy quyền.\n' +
-            '- Điều kiện: Máy giữ nguyên số Serial/IMEI, đầy đủ hộp và phụ kiện đi kèm.';
-        } else if (qLower.includes('phạt') || qLower.includes('điều 301') || qLower.includes('hợp đồng')) {
-          fallbackAns =
-            'Căn cứ theo Điều 301 Luật Thương Mại 2005 về Mức phạt vi phạm nghĩa vụ hợp đồng:\n' +
-            'Mức phạt đối với vi phạm nghĩa vụ hợp đồng hoặc tổng mức phạt đối với nhiều vi phạm do các bên thoả thuận trong hợp đồng, nhưng không quá 8% giá trị phần nghĩa vụ hợp đồng bị vi phạm.';
-        } else if (qLower.includes('hoàn tiền') || qLower.includes('500')) {
-          fallbackAns =
-            '⚠️ Yêu cầu bồi hoàn 500.000 VNĐ vượt ngưỡng tự động của AI Agent (hạn mức tối đa 200.000 VNĐ). Hệ thống đã tự động chuyển yêu cầu vào Cổng phê duyệt con người (HITL Approval Gate) để Quản lý ca trực xác nhận.';
-          setHitlTasks((prev) => [
-            {
-              task_id: `task-hitl-${Math.floor(1000 + Math.random() * 9000)}`,
-              query: textToSend,
-              reason:
-                'Khoản chi bồi hoàn 500.000 VNĐ vượt hạn mức AI tự động (200.000 VNĐ). Yêu cầu Quản lý xác nhận theo Điều 10 Đạo luật AI.',
-              status: 'PENDING',
-              timestamp: 'Vừa xong',
-            },
-            ...prev,
-          ]);
-        } else {
-          fallbackAns =
-            'Tôi đã tiếp nhận câu hỏi của quý khách. Toàn bộ thông tin giá niêm yết và tồn kho được đối chiếu trực tiếp từ PostgreSQL SSOT, đồng thời dữ liệu định danh cá nhân (PII) đã được làm sạch theo Nghị định 13/2023/NĐ-CP.';
-        }
-
-        const fallbackCit: CitationItem[] = [
-          {
-            title: 'Chính sách Bán lẻ & Quy chế Vận hành MWG 2026',
-            statute: 'Điều 1 & Điều 5',
-            page: 3,
-          },
-        ];
-
-        setThoughtTrace((prev) => [
-          ...prev,
-          '[PII GUARD] Đã quét và bảo vệ thông tin định danh cá nhân (CCCD/SĐT/Email).',
-          '[TWO-WAY CITATION] Đã đối chiếu mã băm văn bản chính sách tại PostgreSQL SSOT.',
-        ]);
-        setCurrentCitations(fallbackCit);
-        setCurrentGrounding(0.98);
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `msg-a-${Date.now()}`,
-            role: 'assistant',
-            content: fallbackAns,
-            citations: fallbackCit,
-            groundingScore: 0.98,
-            suggestedProducts,
-            timestamp: new Date().toLocaleTimeString('vi-VN', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-          },
-        ]);
+        setMessages((prev) => [...prev, {
+          id: `msg-a-${Date.now()}`, role: 'assistant',
+          content: 'Hiện không thể kết nối trợ lý hoặc xác minh tài liệu. Vui lòng thử lại sau.',
+          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        }]);
       } finally {
         setIsStreaming(false);
       }
