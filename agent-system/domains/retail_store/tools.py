@@ -135,6 +135,9 @@ async def _call_nestjs_tool(
         "X-Customer-Id": customer_id,
         "X-Trace-Id": trace_id,
     }
+    if ctx and getattr(ctx, "idempotency_key", None):
+        headers["Idempotency-Key"] = ctx.idempotency_key
+        headers["X-Idempotency-Key"] = ctx.idempotency_key
     url = f"{NESTJS_BACKEND_URL.rstrip('/')}/api/v1/internal/tools/{endpoint.lstrip('/')}"
     try:
         timeout = httpx.Timeout(1.0, connect=0.2)
@@ -147,6 +150,14 @@ async def _call_nestjs_tool(
                 if isinstance(body, dict) and "data" in body:
                     return body["data"]
                 return body
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        _NESTJS_OFFLINE_UNTIL = time.time() + 15.0
+        logger.debug("NestJS Internal Gateway [%s] connect error before send (%s).", endpoint, exc)
+    except (httpx.ReadTimeout, httpx.WriteTimeout, httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError) as exc:
+        if ctx is not None:
+            ctx.outcome_ambiguous = True
+        _NESTJS_OFFLINE_UNTIL = time.time() + 15.0
+        logger.debug("NestJS Internal Gateway [%s] ambiguous outcome after send (%s).", endpoint, exc)
     except Exception as exc:
         _NESTJS_OFFLINE_UNTIL = time.time() + 15.0
         logger.debug("NestJS Internal Gateway [%s] unavailable (%s).", endpoint, exc)

@@ -12,6 +12,7 @@ class ToolContext(BaseModel):
     thread_id: str
     run_id: str
     http_client: Any = None
+    outcome_ambiguous: bool = False
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

@@ -254,4 +254,8 @@ class FinOpsLedger:
                 "cached_prompt_tokens": cached_prompt_tokens,
                 "completion_tokens": comp_tokens,
                 "total_cost_usd": str(total_cost),
+                "durable": self.db_path != ":memory:",
+                "persistence_mode": (
+                    "in_memory_ephemeral" if self.db_path == ":memory:" else "sqlite_file"
+                ),
             }

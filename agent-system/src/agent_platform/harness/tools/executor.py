@@ -7,6 +7,7 @@ from agent_platform.harness.state.principal import Principal
 from agent_platform.harness.tools.registry import ToolRegistry
 from agent_platform.harness.tools.spec import ToolContext, ToolUnavailableError
 from agent_platform.harness.tools.idempotency import IdempotencyManager
+from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.governance.policy import PolicyEngine
 from agent_platform.harness.governance.audit_ledger import TamperEvidentHashChainLedger
 from agent_platform.harness.guards.pii import PIIMasker
@@ -166,11 +167,31 @@ class ToolExecutor:
                     },
                 )
 
-        # Step 6: Idempotency Key Gate
+        # Step 6: Idempotency Key Gate (Atomic reservation & payload check for side-effect tools)
         idem_key = self.idempotency.generate_key(thread_id, call_id)
-        if tool_spec.side_effect and self.idempotency.has(idem_key):
-            cached_output = self.idempotency.get(idem_key)
-            return ToolExecutionResult(output=cached_output, is_error=False)
+        if tool_spec.side_effect:
+            if hasattr(self.idempotency, "begin_execution"):
+                reservation = self.idempotency.begin_execution(
+                    idem_key,
+                    tenant_id=principal.tenant_id,
+                    user_id=principal.user_id,
+                    thread_id=thread_id,
+                    tool_name=tool_name,
+                    call_id=call_id,
+                    arguments=args_dict,
+                    backend_idempotency_key=idem_key,
+                )
+                if reservation.action == "replay":
+                    return ToolExecutionResult(output=reservation.output, is_error=False)
+                if reservation.action in ("conflict", "in_progress", "unknown_outcome"):
+                    return ToolExecutionResult(
+                        output=reservation.message or "Idempotency check rejected execution.",
+                        is_error=True,
+                        error_code=reservation.error_code or "idempotency_conflict",
+                    )
+            elif self.idempotency.has(idem_key):
+                cached_output = self.idempotency.get(idem_key)
+                return ToolExecutionResult(output=cached_output, is_error=False)
 
         # Step 7: Timed Execution (Backend receives trusted, unmasked business data)
         ctx = ToolContext(
@@ -190,22 +211,60 @@ class ToolExecutor:
 
             raw_output = await asyncio.wait_for(exec_coro, timeout=tool_spec.timeout_s)
         except ToolUnavailableError as exc:
-            return ToolExecutionResult(output=PIIMasker.mask(str(exc), fail_closed=False), is_error=True, error_code="unavailable")
-        except asyncio.TimeoutError:
+            if tool_spec.side_effect:
+                if getattr(ctx, "outcome_ambiguous", False) and hasattr(
+                    self.idempotency, "mark_unknown_outcome"
+                ):
+                    self.idempotency.mark_unknown_outcome(idem_key, error_code="unavailable")
+                elif hasattr(self.idempotency, "abort_execution"):
+                    self.idempotency.abort_execution(idem_key)
             return ToolExecutionResult(
-                output=("Không thể xác nhận kết quả thao tác; hãy kiểm tra trạng thái trước khi thử lại."
-                        if tool_spec.side_effect else f"Execution error: Tool '{tool_name}' timed out after {tool_spec.timeout_s}s."),
+                output=PIIMasker.mask(str(exc), fail_closed=False),
+                is_error=True,
+                error_code="unavailable",
+            )
+        except asyncio.TimeoutError:
+            if tool_spec.side_effect and hasattr(self.idempotency, "mark_unknown_outcome"):
+                self.idempotency.mark_unknown_outcome(idem_key, error_code="timeout")
+            return ToolExecutionResult(
+                output=(
+                    "Không thể xác nhận kết quả thao tác; hãy kiểm tra trạng thái trước khi thử lại."
+                    if tool_spec.side_effect
+                    else f"Execution error: Tool '{tool_name}' timed out after {tool_spec.timeout_s}s."
+                ),
                 is_error=True,
                 error_code="timeout",
             )
+        except PersistenceError:
+            raise
         except Exception as exc:
+            if tool_spec.side_effect and hasattr(self.idempotency, "abort_execution"):
+                self.idempotency.abort_execution(idem_key)
             return ToolExecutionResult(
                 output=f"Execution error in tool '{tool_name}': {PIIMasker.mask(str(exc), fail_closed=False)}",
                 is_error=True,
                 error_code="execution_failure",
             )
 
-        # Step 8: Tamper-Evident Audit Logging (Inputs are verified masked)
+        # Step 8: Output Sanitization & Escaping (Outputs are verified masked before reaching LLM / State)
+        masked_output = PIIMasker.mask(raw_output, fail_closed=False)
+        sanitized_str = (
+            json.dumps(masked_output, default=str, ensure_ascii=False)
+            if isinstance(masked_output, (dict, list))
+            else PIIMasker.mask_text(str(masked_output))
+        )
+        if len(sanitized_str) > 4000:
+            sanitized_str = sanitized_str[:4000] + "... [truncated]"
+
+        wrapped_output = f"<tool_output name=\"{tool_name}\">\n{sanitized_str}\n</tool_output>"
+
+        if tool_spec.side_effect:
+            if hasattr(self.idempotency, "complete_execution"):
+                self.idempotency.complete_execution(idem_key, wrapped_output)
+            else:
+                self.idempotency.record(idem_key, wrapped_output)
+
+        # Step 9: Tamper-Evident Audit Logging (Inputs are verified masked)
         self.audit_ledger.record_event(
             event_id=f"audit_{call_id}",
             thread_id=thread_id,
@@ -216,16 +275,5 @@ class ToolExecutor:
             input_masked=PIIMasker.mask(args_dict, fail_closed=False),
             decision="executed",
         )
-
-        # Step 9: Output Sanitization & Escaping (Outputs are verified masked before reaching LLM / State)
-        masked_output = PIIMasker.mask(raw_output, fail_closed=False)
-        sanitized_str = json.dumps(masked_output, default=str, ensure_ascii=False) if isinstance(masked_output, (dict, list)) else PIIMasker.mask_text(str(masked_output))
-        if len(sanitized_str) > 4000:
-            sanitized_str = sanitized_str[:4000] + "... [truncated]"
-
-        wrapped_output = f"<tool_output name=\"{tool_name}\">\n{sanitized_str}\n</tool_output>"
-
-        if tool_spec.side_effect:
-            self.idempotency.record(idem_key, wrapped_output)
 
         return ToolExecutionResult(output=wrapped_output, is_error=False)
