@@ -120,11 +120,11 @@ async def _call_nestjs_tool(
     if time.time() < _NESTJS_OFFLINE_UNTIL:
         return None
 
-    customer_id = (
-        getattr(ctx.principal, "user_id", "guest_user")
-        if ctx and hasattr(ctx, "principal") and ctx.principal
-        else "guest_user"
-    )
+    from agent_platform.request_credentials import current_authorization
+    authorization = current_authorization()
+    customer_scoped = endpoint in {"view_cart", "add_to_cart", "remove_from_cart", "preview_order", "get_order_status", "cancel_simulated_order", "create_support_ticket", "manage_favorite"}
+    if customer_scoped and (not ctx or not ctx.principal or ctx.principal.role == "guest" or not authorization):
+        return None
     trace_id = (
         getattr(ctx, "run_id", "trace_agent_tools")
         if ctx and hasattr(ctx, "run_id") and ctx.run_id
@@ -132,9 +132,10 @@ async def _call_nestjs_tool(
     )
     headers = {
         "X-Internal-Secret": INTERNAL_TOOL_SECRET,
-        "X-Customer-Id": customer_id,
         "X-Trace-Id": trace_id,
     }
+    if customer_scoped:
+        headers["Authorization"] = authorization
     if ctx and getattr(ctx, "idempotency_key", None):
         headers["Idempotency-Key"] = ctx.idempotency_key
         headers["X-Idempotency-Key"] = ctx.idempotency_key
@@ -855,34 +856,7 @@ async def manage_favorite(args: ManageFavoriteInput, ctx: ToolContext) -> Dict[s
     )
     if live_data and live_data.get("status") == "success":
         return {"source": "nestjs_commerce_ssot", **live_data}
-
-    cust_id = getattr(ctx.principal, "user_id", "customer_default") if ctx and ctx.principal else "customer_default"
-    favs = _FALLBACK_FAVORITES.setdefault(cust_id, set())
-    sku_norm = args.sku.strip().upper()
-
-    if args.action == "add":
-        favs.add(sku_norm)
-        is_fav = True
-    elif args.action == "remove":
-        favs.discard(sku_norm)
-        is_fav = False
-    else:
-        if sku_norm in favs:
-            favs.remove(sku_norm)
-            is_fav = False
-        else:
-            favs.add(sku_norm)
-            is_fav = True
-
-    return {
-        "status": "success",
-        "customer_id": cust_id,
-        "sku": sku_norm,
-        "action": args.action,
-        "is_favorited": is_fav,
-        "favorites": sorted(favs),
-        "message": f"Đã cập nhật danh sách yêu thích cho sản phẩm [{sku_norm}].",
-    }
+    raise ToolUnavailableError("Không thể xác nhận kết quả yêu thích; hãy kiểm tra trạng thái trước khi thử lại.")
 
 
 # ---------------------------------------------------------------------------

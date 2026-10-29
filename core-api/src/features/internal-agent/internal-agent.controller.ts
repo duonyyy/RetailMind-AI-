@@ -3,12 +3,13 @@ import {
   Controller,
   Post,
   Body,
-  Headers,
+  Req,
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
 import { InternalAgentService } from './internal-agent.service';
 import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
+import { InternalUserGuard } from './internal-user.guard';
 
 @Public()
 @Controller('internal/tools')
@@ -16,18 +17,12 @@ import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
 export class InternalAgentController {
   constructor(private readonly agentService: InternalAgentService) {}
 
-  private extractCustomerId(header?: string, bodyCustomerId?: string): string | undefined {
-    const id = (header || bodyCustomerId || '').trim();
-    if (!id || id === 'guest_user') return undefined;
-    return id;
-  }
-
-  private requireCustomerId(header?: string, bodyCustomerId?: string, action = 'thao tác này'): string {
-    const id = this.extractCustomerId(header, bodyCustomerId);
-    if (!id) {
-      throw new BadRequestException(`Cần danh tính khách hàng (Header X-Customer-Id) để thực hiện ${action}.`);
+  private requester(request: any): { id: string; role: string } {
+    const user = request?.internalUser;
+    if (!user?.id || !['CUSTOMER', 'ADMIN'].includes(user.role)) {
+      throw new BadRequestException('Cần danh tính người dùng đã xác thực.');
     }
-    return id;
+    return user;
   }
 
   // 1. Tìm kiếm laptop
@@ -67,88 +62,93 @@ export class InternalAgentController {
 
   // 6. Xem giỏ hàng (Chống IDOR qua Header X-Customer-Id)
   @Post(['cart-view', 'view_cart'])
+  @UseGuards(InternalUserGuard)
   async cartView(
-    @Headers('x-customer-id') customerIdHeader?: string,
-    @Body('customer_id') customerIdBody?: string,
+    @Req() request: any,
   ) {
-    const customerId = this.requireCustomerId(customerIdHeader, customerIdBody, 'xem giỏ hàng');
+    const customerId = this.requester(request).id;
     const res = await this.agentService.viewCart(customerId);
     return { status: 'success', tool: 'view_cart', data: res };
   }
 
   // 7. Thêm vào giỏ hàng
   @Post(['cart-add', 'add_to_cart'])
+  @UseGuards(InternalUserGuard)
   async cartAdd(
     @Body() body: any,
-    @Headers('x-customer-id') customerIdHeader?: string,
+    @Req() request: any,
   ) {
-    const customerId = this.requireCustomerId(customerIdHeader, body?.customer_id, 'thêm sản phẩm vào giỏ hàng');
+    const customerId = this.requester(request).id;
     const res = await this.agentService.addToCart(customerId, body || {});
     return { status: 'success', tool: 'add_to_cart', data: res };
   }
 
   // 8. Xóa khỏi giỏ hàng
   @Post(['cart-remove', 'remove_from_cart'])
+  @UseGuards(InternalUserGuard)
   async cartRemove(
     @Body() body: any,
-    @Headers('x-customer-id') customerIdHeader?: string,
+    @Req() request: any,
   ) {
-    const customerId = this.requireCustomerId(customerIdHeader, body?.customer_id, 'xóa sản phẩm khỏi giỏ hàng');
+    const customerId = this.requester(request).id;
     const res = await this.agentService.removeFromCart(customerId, body || {});
     return { status: 'success', tool: 'remove_from_cart', data: res };
   }
 
   // 9. Xem trước đơn hàng & Signed Preview Token
   @Post(['order-preview', 'preview_order'])
+  @UseGuards(InternalUserGuard)
   async orderPreview(
     @Body() body: any,
-    @Headers('x-customer-id') customerIdHeader?: string,
+    @Req() request: any,
   ) {
-    const customerId = this.extractCustomerId(customerIdHeader, body?.customer_id);
+    const customerId = this.requester(request).id;
     const res = await this.agentService.previewOrder(body || {}, customerId);
     return { status: 'success', tool: 'order_preview', data: res };
   }
 
   // 10. Trạng thái đơn hàng
   @Post(['order-status', 'get_order_status', 'lookup_order'])
+  @UseGuards(InternalUserGuard)
   async orderStatus(
     @Body() body: any,
-    @Headers('x-customer-id') customerIdHeader?: string,
+    @Req() request: any,
   ) {
-    const customerId = this.requireCustomerId(customerIdHeader, body?.customer_id, 'tra cứu đơn hàng');
-    const res = await this.agentService.getOrderStatus(body || {}, customerId);
+    const res = await this.agentService.getOrderStatus(body || {}, this.requester(request));
     return { status: 'success', tool: 'get_order_status', data: res };
   }
 
   // 11. Hủy đơn hàng giả lập
   @Post(['order-cancel', 'cancel_simulated_order'])
+  @UseGuards(InternalUserGuard)
   async orderCancel(
     @Body() body: any,
-    @Headers('x-customer-id') customerIdHeader?: string,
+    @Req() request: any,
   ) {
-    const customerId = this.requireCustomerId(customerIdHeader, body?.customer_id, 'hủy đơn hàng');
-    const res = await this.agentService.cancelOrder(body || {}, customerId);
+    const res = await this.agentService.cancelOrder(body || {}, this.requester(request));
     return { status: 'success', tool: 'cancel_simulated_order', data: res };
   }
 
   // 12. Tạo phiếu hỗ trợ CSKH
   @Post(['ticket-create', 'create_support_ticket'])
+  @UseGuards(InternalUserGuard)
   async ticketCreate(
     @Body() body: any,
-    @Headers('x-customer-id') customerIdHeader?: string,
+    @Req() request: any,
   ) {
-    const customerId = this.requireCustomerId(customerIdHeader, body?.customer_id, 'tạo phiếu hỗ trợ');
+    const customerId = this.requester(request).id;
     const res = await this.agentService.createSupportTicket(customerId, body || {});
     return { status: 'success', tool: 'create_support_ticket', data: res };
   }
 
   // 13. Quản lý sản phẩm yêu thích (Favorites)
   @Post(['manage-favorite', 'manage_favorite'])
+  @UseGuards(InternalUserGuard)
   async manageFavorite(
     @Body() body: any,
-    @Headers('x-customer-id') customerIdHeader?: string,
+    @Req() request: any,
   ) {
-    const customerId = this.requireCustomerId(customerIdHeader, body?.customer_id, 'quản lý danh sách yêu thích');
+    const customerId = this.requester(request).id;
     const res = await this.agentService.manageFavorite(customerId, body || {});
     return { status: 'success', tool: 'manage_favorite', data: res };
   }

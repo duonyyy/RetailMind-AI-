@@ -13,6 +13,7 @@ from agent_platform.harness.persistence.ports import (
     sanitize_persistence_error,
 )
 from agent_platform.api.routers import chat, hitl, tools, health, web_client
+from agent_platform.request_credentials import RequestCredentialMiddleware
 
 logger = logging.getLogger("agent_platform.api")
 
@@ -41,6 +42,7 @@ def create_app(settings: PlatformSettings, pack: DomainPack) -> FastAPI:
     app.state.settings = settings
     app.state.pack = pack
     app.state.harness = AgentHarness(settings=settings, pack=pack)
+    app.add_middleware(RequestCredentialMiddleware)
 
     # 2. CORS Hardening (Fixes A6: never wildcard with credentials)
     origins = settings.app.cors_origins

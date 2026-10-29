@@ -307,16 +307,16 @@ export class InternalAgentService {
   /**
    * Tool 10: Tra cứu trạng thái đơn hàng (PostgreSQL SSOT & Anti-IDOR)
    */
-  async getOrderStatus(args: { order_id?: string; order_no?: string }, customerId?: string) {
+  async getOrderStatus(args: { order_id?: string; order_no?: string }, requester?: { id: string; role: string }) {
     const targetId = args.order_id || args.order_no;
     if (!targetId) {
       throw new BadRequestException('Mã đơn hàng là bắt buộc.');
     }
-    const requesterId = typeof customerId === 'string' ? customerId.trim() : '';
-    if (!requesterId || requesterId === 'guest_user') {
+    const requesterId = typeof requester?.id === 'string' ? requester.id.trim() : '';
+    if (!requesterId || requesterId === 'guest_user' || !['CUSTOMER', 'ADMIN'].includes(requester?.role || '')) {
       throw new BadRequestException('Danh tính khách hàng là bắt buộc để tra cứu đơn hàng.');
     }
-    const principal = { id: requesterId, role: 'CUSTOMER' };
+    const principal = { id: requesterId, role: requester!.role };
 
     const order = await this.ordersService.getOrder(targetId, principal);
     return {
@@ -338,16 +338,16 @@ export class InternalAgentService {
    */
   async cancelOrder(
     args: { order_id: string; reason?: string },
-    customerId?: string,
+    requester?: { id: string; role: string },
   ) {
     if (!args.order_id) {
       throw new BadRequestException('Mã đơn hàng là bắt buộc.');
     }
-    const requesterId = typeof customerId === 'string' ? customerId.trim() : '';
-    if (!requesterId || requesterId === 'guest_user') {
+    const requesterId = typeof requester?.id === 'string' ? requester.id.trim() : '';
+    if (!requesterId || requesterId === 'guest_user' || !['CUSTOMER', 'ADMIN'].includes(requester?.role || '')) {
       throw new BadRequestException('Danh tính khách hàng là bắt buộc để hủy đơn hàng.');
     }
-    const principal = { id: requesterId, role: 'CUSTOMER' };
+    const principal = { id: requesterId, role: requester!.role };
 
     const reason = args.reason || 'Khách hàng yêu cầu hủy đơn qua tác tử AI';
     const result = await this.ordersService.cancelOrder(args.order_id, reason, principal);

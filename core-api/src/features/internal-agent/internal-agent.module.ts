@@ -8,6 +8,8 @@ import { KnowledgeModule } from '../knowledge/public-api';
 import { SupportModule } from '../support/public-api';
 import { CustomersModule } from '../customers/public-api';
 import { CartModule } from '../cart/public-api';
+import { AuthModule } from '../auth/public-api';
+import { InternalUserGuard } from './internal-user.guard';
 
 import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
 
@@ -20,9 +22,10 @@ import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
     SupportModule,
     CustomersModule,
     CartModule,
+    AuthModule,
   ],
   controllers: [InternalAgentController],
-  providers: [InternalAgentService, InternalSecretGuard],
+  providers: [InternalAgentService, InternalSecretGuard, InternalUserGuard],
   exports: [InternalAgentService],
 })
 export class InternalAgentModule {}

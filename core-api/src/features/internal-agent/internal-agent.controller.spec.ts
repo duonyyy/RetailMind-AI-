@@ -12,12 +12,15 @@ import { ConfigService } from '@nestjs/config';
 import { InternalSecretGuard } from '../../shared/guards/internal-secret.guard';
 import { ForbiddenException, ExecutionContext, BadRequestException } from '@nestjs/common';
 import { createMockVariantRepository } from '../../test/test-bed.helper';
+import { JwtService } from '@nestjs/jwt';
+import { AuthService } from '../auth/public-api';
 
 describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', () => {
   let controller: InternalAgentController;
   let service: InternalAgentService;
   let guard: InternalSecretGuard;
   let configService: ConfigService;
+  const customerRequest = { internalUser: { id: 'cust-1', role: 'CUSTOMER' } };
 
   const mockInventoryService = {
     getStores: jest.fn().mockResolvedValue([
@@ -135,6 +138,8 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
         InternalAgentService,
         CatalogService,
         InternalSecretGuard,
+        { provide: JwtService, useValue: {} },
+        { provide: AuthService, useValue: {} },
         {
           provide: InventoryService,
           useValue: mockInventoryService,
@@ -257,7 +262,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     });
 
     it('6. cartView should query customer cart from CartService', async () => {
-      const res = await controller.cartView('cust-1');
+      const res = await controller.cartView(customerRequest);
       expect(res.status).toBe('success');
       expect(res.tool).toBe('view_cart');
       expect(res.data.customer_id).toBe('cust-1');
@@ -267,7 +272,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     });
 
     it('7. cartAdd should add item to cart via CartService', async () => {
-      const res = await controller.cartAdd({ sku: 'LT-ASUS-VIVO15-OLED', quantity: 2 }, 'cust-1');
+      const res = await controller.cartAdd({ sku: 'LT-ASUS-VIVO15-OLED', quantity: 2 }, customerRequest);
       expect(res.status).toBe('success');
       expect(res.tool).toBe('add_to_cart');
       expect(res.data.status).toBe('success');
@@ -275,7 +280,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     });
 
     it('8. cartRemove should remove item from cart via CartService', async () => {
-      const res = await controller.cartRemove({ sku: 'LT-ASUS-VIVO15-OLED' }, 'cust-1');
+      const res = await controller.cartRemove({ sku: 'LT-ASUS-VIVO15-OLED' }, customerRequest);
       expect(res.status).toBe('success');
       expect(res.tool).toBe('remove_from_cart');
       expect(res.data.status).toBe('success');
@@ -283,7 +288,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     });
 
     it('9. orderPreview should calculate preview and issue previewToken', async () => {
-      const res = await controller.orderPreview({ sku: 'LT-ASUS-VIVO15-OLED', quantity: 1 }, 'cust-1');
+      const res = await controller.orderPreview({ sku: 'LT-ASUS-VIVO15-OLED', quantity: 1 }, customerRequest);
       expect(res.status).toBe('success');
       expect(res.tool).toBe('order_preview');
       expect(res.data.previewToken).toBe('preview.token.valid.hmac');
@@ -292,7 +297,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     });
 
     it('10. orderStatus should lookup real order from OrdersService', async () => {
-      const res = await controller.orderStatus({ order_id: 'ORD-100201' }, 'cust-1');
+      const res = await controller.orderStatus({ order_id: 'ORD-100201' }, customerRequest);
       expect(res.status).toBe('success');
       expect(res.tool).toBe('get_order_status');
       expect(res.data.order_id).toBe('ORD-100201');
@@ -301,7 +306,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     });
 
     it('11. orderCancel should execute cancellation with inventory restoration', async () => {
-      const res = await controller.orderCancel({ order_id: 'ORD-100201', reason: 'Đổi ý' }, 'cust-1');
+      const res = await controller.orderCancel({ order_id: 'ORD-100201', reason: 'Đổi ý' }, customerRequest);
       expect(res.status).toBe('success');
       expect(res.tool).toBe('cancel_simulated_order');
       expect(res.data.order_id).toBe('ORD-100201');
@@ -312,7 +317,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     it('12. ticketCreate should create support ticket via SupportService', async () => {
       const res = await controller.ticketCreate(
         { order_id: 'ORD-100201', title: 'Máy lỗi', description: 'Màn hình bị nháy' },
-        'cust-1',
+        customerRequest,
       );
       expect(res.status).toBe('success');
       expect(res.tool).toBe('create_support_ticket');
@@ -323,7 +328,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     it('13. manageFavorite should support add, remove, and toggle actions', async () => {
       const addRes = await controller.manageFavorite(
         { sku: 'LT-ASUS-VIVO15-OLED', action: 'add' },
-        'cust-1',
+        customerRequest,
       );
       expect(addRes.status).toBe('success');
       expect(addRes.data.action).toBe('add');
@@ -332,7 +337,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
 
       const removeRes = await controller.manageFavorite(
         { sku: 'LT-ASUS-VIVO15-OLED', action: 'remove' },
-        'cust-1',
+        customerRequest,
       );
       expect(removeRes.status).toBe('success');
       expect(removeRes.data.action).toBe('remove');
@@ -342,7 +347,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
 
     describe('Anti-IDOR Zero-Trust Customer Identity Validation', () => {
       it('fails closed when X-Customer-Id is missing or empty for customer-scoped tools', async () => {
-        await expect(controller.cartView(undefined, undefined)).rejects.toThrow(BadRequestException);
+        await expect(controller.cartView(undefined)).rejects.toThrow(BadRequestException);
         await expect(controller.cartAdd({ sku: 'ABC', quantity: 1 }, undefined)).rejects.toThrow(BadRequestException);
         await expect(controller.cartRemove({ sku: 'ABC' }, undefined)).rejects.toThrow(BadRequestException);
         await expect(controller.orderStatus({ order_id: 'ORD-100201' }, undefined)).rejects.toThrow(BadRequestException);
@@ -352,23 +357,33 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
       });
 
       it('rejects guest_user placeholder for customer-scoped operations', async () => {
-        await expect(controller.cartView('guest_user', undefined)).rejects.toThrow(BadRequestException);
-        await expect(controller.cartAdd({ sku: 'ABC', quantity: 1 }, 'guest_user')).rejects.toThrow(BadRequestException);
-        await expect(controller.orderStatus({ order_id: 'ORD-100201' }, 'guest_user')).rejects.toThrow(BadRequestException);
-        await expect(controller.orderCancel({ order_id: 'ORD-100201' }, 'guest_user')).rejects.toThrow(BadRequestException);
-        await expect(controller.ticketCreate({ title: 't', description: 'd' }, 'guest_user')).rejects.toThrow(BadRequestException);
-        await expect(controller.manageFavorite({ sku: 'ABC' }, 'guest_user')).rejects.toThrow(BadRequestException);
+        const guest = { internalUser: { id: 'guest_user', role: 'GUEST' } };
+        await expect(controller.cartView(guest)).rejects.toThrow(BadRequestException);
+        await expect(controller.cartAdd({ sku: 'ABC', quantity: 1 }, guest)).rejects.toThrow(BadRequestException);
+        await expect(controller.orderStatus({ order_id: 'ORD-100201' }, guest)).rejects.toThrow(BadRequestException);
+        await expect(controller.orderCancel({ order_id: 'ORD-100201' }, guest)).rejects.toThrow(BadRequestException);
+        await expect(controller.ticketCreate({ title: 't', description: 'd' }, guest)).rejects.toThrow(BadRequestException);
+        await expect(controller.manageFavorite({ sku: 'ABC' }, guest)).rejects.toThrow(BadRequestException);
       });
 
       it('rejects missing or guest identity in the service without calling the order service', async () => {
         mockOrdersService.getOrder.mockClear();
         mockOrdersService.cancelOrder.mockClear();
-        for (const customerId of [undefined, '', '   ', 'guest_user', ' guest_user ']) {
-          await expect(service.getOrderStatus({ order_id: 'ORD-100201' }, customerId)).rejects.toThrow(BadRequestException);
-          await expect(service.cancelOrder({ order_id: 'ORD-100201' }, customerId)).rejects.toThrow(BadRequestException);
+        for (const requester of [undefined, ...['', '   ', 'guest_user', ' guest_user '].map(id => ({ id, role: 'CUSTOMER' }))]) {
+          await expect(service.getOrderStatus({ order_id: 'ORD-100201' }, requester)).rejects.toThrow(BadRequestException);
+          await expect(service.cancelOrder({ order_id: 'ORD-100201' }, requester)).rejects.toThrow(BadRequestException);
         }
         expect(mockOrdersService.getOrder).not.toHaveBeenCalled();
         expect(mockOrdersService.cancelOrder).not.toHaveBeenCalled();
+      });
+      it('ignores forged customer IDs and forwards the verified admin role', async () => {
+        await controller.cartAdd({ sku: 'ABC', quantity: 1, customer_id: 'victim' }, customerRequest);
+        expect(mockCartService.addItem).toHaveBeenLastCalledWith('cust-1', expect.anything());
+        const admin = { internalUser: { id: 'admin-1', role: 'ADMIN' } };
+        await controller.orderStatus({ order_id: 'ORD-100201', customer_id: 'victim' }, admin);
+        expect(mockOrdersService.getOrder).toHaveBeenLastCalledWith('ORD-100201', { id: 'admin-1', role: 'ADMIN' });
+        await controller.orderCancel({ order_id: 'ORD-100201' }, admin);
+        expect(mockOrdersService.cancelOrder).toHaveBeenLastCalledWith('ORD-100201', expect.any(String), { id: 'admin-1', role: 'ADMIN' });
       });
     });
   });

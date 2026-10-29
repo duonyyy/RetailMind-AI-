@@ -42,7 +42,9 @@ Human-in-the-Loop approval and deferred tool execution are fully implemented:
 
 ## 4. Deployment Architecture
 
-`CORE_API_URL` is a trusted server-side environment variable (`http://localhost:4000`), not user-controlled input. The agent and core-api communicate over a trusted internal Docker network (`retailmind_nw`).
+`CORE_API_URL` is a server-side environment variable (`http://localhost:4000`), not user-controlled input. Network configuration alone is not evidence of isolation; the Core port may also be published on the host.
+
+Customer-scoped internal tools require both the service secret and the end user's access token. The Agent keeps the incoming bearer credential in request-scoped context rather than graph state or checkpoints and forwards it only to customer-scoped Core tools. Core verifies its signature, expiry and access-token type, reloads the active user and role, and ignores customer IDs supplied in headers or request bodies. Customers are restricted by Core's order ownership checks; verified admins can query or cancel other customers' orders subject to Core's lifecycle rules. Cart, favorite and ticket operations use the authenticated user's own ID. Missing or invalid credentials fail closed. This is a source-level contract; live HTTP, database, deployment and credential-leak verification remain separate gates.
 
 Verification of this security boundary is covered in:
 - `tests/e2e/test_identity_hitl_boundary.py` (HTTP auth, guest bounds, admin routes)
