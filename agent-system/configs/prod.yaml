@@ -5,7 +5,8 @@ app:
 
 persistence:
   adapter: "postgres"
-  postgres_url: "postgresql://postgres:postgres@postgres:5432/retailmind_ai"
+  postgres_url: ""
+  postgres_schema: "agent"
   redis_url: "redis://redis:6379/0"
 
 llm:

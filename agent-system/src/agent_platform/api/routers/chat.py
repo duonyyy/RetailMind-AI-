@@ -1,7 +1,8 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.state.principal import Principal
 from agent_platform.api.deps import get_optional_principal, owned_thread
 from agent_platform.api.sse import format_sse_event
@@ -30,11 +31,19 @@ async def chat_endpoint(
     """Synchronous JSON chat endpoint."""
     harness = request.app.state.harness
     thread_id = await owned_thread(request, principal, req.thread_id)
-    state = await harness.execute(
-        query=req.query,
-        principal=principal,
-        thread_id=thread_id,
-    )
+    try:
+        state = await harness.execute(
+            query=req.query,
+            principal=principal,
+            thread_id=thread_id,
+        )
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Chat session not found.")
+    except PersistenceError:
+        raise HTTPException(
+            status_code=503,
+            detail="Durable persistence store unavailable; request was not committed.",
+        )
 
     citations = [ev.source_document for ev in (state.get("matched_evidence", []) if state.get("status") == "done" else [])]
     return ChatResponse(
@@ -60,11 +69,21 @@ async def chat_stream_endpoint(
         # Mask query in SSE run.started event
         yield format_sse_event("run.started", {"query": PIIMasker.mask(req.query, fail_closed=False), "user_id": principal.user_id, "thread_id": thread_id})
 
-        state = await harness.execute(
-            query=req.query,
-            principal=principal,
-            thread_id=thread_id,
-        )
+        try:
+            state = await harness.execute(
+                query=req.query,
+                principal=principal,
+                thread_id=thread_id,
+            )
+        except PersistenceError:
+            yield format_sse_event(
+                "run.error",
+                {
+                    "status": "persistence_error",
+                    "detail": "Durable persistence store unavailable; checkpoint was not committed.",
+                },
+            )
+            return
 
         if state.get("final_answer"):
             yield format_sse_event("answer.final", {"text": state["final_answer"]})

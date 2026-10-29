@@ -33,7 +33,16 @@ class PersistenceSettings(BaseModel):
         default_factory=lambda: os.getenv("SQLITE_PATH", os.getenv("PERSISTENCE_SQLITE_PATH", "agent_data.db"))
     )
     postgres_url: str = Field(
-        default_factory=lambda: os.getenv("POSTGRES_URL", os.getenv("PERSISTENCE_POSTGRES_URL", ""))
+        default_factory=lambda: os.getenv(
+            "AGENT_POSTGRES_URL",
+            os.getenv("POSTGRES_URL", os.getenv("PERSISTENCE_POSTGRES_URL", "")),
+        )
+    )
+    postgres_schema: str = Field(
+        default_factory=lambda: os.getenv(
+            "AGENT_POSTGRES_SCHEMA",
+            os.getenv("PERSISTENCE_POSTGRES_SCHEMA", "agent"),
+        )
     )
     redis_url: str = Field(
         default_factory=lambda: os.getenv("REDIS_URL", os.getenv("PERSISTENCE_REDIS_URL", ""))

@@ -19,6 +19,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.state.principal import Principal
 from agent_platform.api.deps import get_optional_principal, owned_thread, require_role
 from agent_platform.harness.guards.sanitizer import InputSanitizer
@@ -94,11 +95,17 @@ async def chat_stream_endpoint(
                         demo_mod.dispatch_demo(harness.llm, clean_query)
 
         # Execute agent workflow
-        state = await harness.execute(
-            query=clean_query,
-            principal=principal,
-            thread_id=thread_id,
-        )
+        try:
+            state = await harness.execute(
+                query=clean_query,
+                principal=principal,
+                thread_id=thread_id,
+            )
+        except PersistenceError:
+            err_msg = "Hệ thống lưu trữ bền vững đang gián đoạn; tác vụ chưa được ghi nhận."
+            yield f"data: {json.dumps({'type': 'error', 'code': 'persistence_unavailable', 'message': err_msg})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         # Emit thought traces for each executed tool
         for ev in state.get("tool_events", []):
@@ -125,16 +132,24 @@ async def chat_stream_endpoint(
 
             amount_val = args.get("amount", "500000")
             order_val = args.get("order_id", "ORD-100201")
-            task_id = f"task-hitl-{uuid.uuid4().hex[:6]}"
+            task_id = state.get("approval_id") or f"task-hitl-{uuid.uuid4().hex[:6]}"
 
-            app_req = await harness.approval_store.create_request(
-                thread_id=thread_id,
-                run_id=state.get("run_id", f"run_{uuid.uuid4().hex[:8]}"),
-                tool_name=tool_name,
-                arguments=PIIMasker.mask(args, fail_closed=False),
-                approver_role="admin",
-                approval_id=task_id,
-            )
+            try:
+                app_req = await harness.approval_store.create_request(
+                    thread_id=thread_id,
+                    run_id=state.get("run_id", f"run_{uuid.uuid4().hex[:8]}"),
+                    tool_name=tool_name,
+                    arguments=PIIMasker.mask(args, fail_closed=False),
+                    approver_role="admin",
+                    approval_id=task_id,
+                    requester_user_id=principal.user_id,
+                    requester_tenant_id=principal.tenant_id,
+                )
+            except PersistenceError:
+                err_msg = "Không thể lưu yêu cầu phê duyệt HITL vào cơ sở dữ liệu bền vững."
+                yield f"data: {json.dumps({'type': 'error', 'code': 'persistence_unavailable', 'message': err_msg})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
 
             hitl_reason = (
                 f"Khoản bồi hoàn {amount_val} VNĐ cho đơn hàng {order_val} vượt hạn mức AI tự động "
@@ -213,11 +228,16 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request, principal
                 if hasattr(demo_mod, "dispatch_demo"):
                     demo_mod.dispatch_demo(harness.llm, clean_query)
 
-    state = await harness.execute(
-        query=clean_query,
-        principal=principal,
-        thread_id=thread_id,
-    )
+    try:
+        state = await harness.execute(
+            query=clean_query,
+            principal=principal,
+            thread_id=thread_id,
+        )
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Chat session not found.")
+    except PersistenceError:
+        raise HTTPException(status_code=503, detail="Durable persistence store unavailable.")
 
     requires_approval = state.get("status") == "awaiting_approval"
     citations_data = [
@@ -248,7 +268,10 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request, principal
 async def get_hitl_queue(request: Request, admin: Principal = Depends(require_role("admin"))):
     """Returns list of pending HITL tasks formatted for Frontend interface."""
     harness = request.app.state.harness
-    pending_list = await harness.approval_store.list_pending()
+    try:
+        pending_list = await harness.approval_store.list_pending()
+    except PersistenceError:
+        raise HTTPException(status_code=503, detail="Approval persistence store unavailable.")
     formatted = []
     for item in pending_list:
         amount_str = item.arguments.get("amount", "")
@@ -309,7 +332,11 @@ async def review_hitl(req: HitlReviewRequest, request: Request, admin: Principal
     except PermissionError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
+        msg = str(ve)
+        status_code = 409 if "already " in msg.lower() else 400
+        raise HTTPException(status_code=status_code, detail=msg)
+    except PersistenceError:
+        raise HTTPException(status_code=503, detail="Approval persistence store unavailable; decision was not committed.")
 
 
 @router.post("/hitl/{task_id}/approve")
@@ -339,6 +366,8 @@ async def get_finops_metrics(request: Request, admin: Principal = Depends(requir
         "prompt_tokens": summary["prompt_tokens"],
         "completion_tokens": summary["completion_tokens"],
         "total_cost_usd": summary["total_cost_usd"],
+        "durable": summary.get("durable", False),
+        "persistence_mode": summary.get("persistence_mode", "in_memory_ephemeral"),
         "avg_latency_ms": 38.5,
         "circuit_state": "CLOSED",
     }

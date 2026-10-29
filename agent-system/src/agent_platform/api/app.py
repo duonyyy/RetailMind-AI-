@@ -1,5 +1,6 @@
 import uuid
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -7,6 +8,10 @@ from agent_platform.config.settings import PlatformSettings
 from agent_platform.domain.pack import DomainPack
 from agent_platform.harness import AgentHarness
 from agent_platform.harness.guards.pii import PIIMasker
+from agent_platform.harness.persistence.ports import (
+    PersistenceError,
+    sanitize_persistence_error,
+)
 from agent_platform.api.routers import chat, hitl, tools, health, web_client
 
 logger = logging.getLogger("agent_platform.api")
@@ -15,11 +20,21 @@ def create_app(settings: PlatformSettings, pack: DomainPack) -> FastAPI:
     """
     Factory creating fully configured, hardened FastAPI enterprise application.
     """
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        try:
+            yield
+        finally:
+            harness_obj = getattr(application.state, "harness", None)
+            if harness_obj and hasattr(harness_obj, "aclose"):
+                await harness_obj.aclose()
+
     app = FastAPI(
         title=f"{settings.app.name} — {pack.name}",
         version=settings.app.version,
         docs_url="/docs" if settings.app.env != "prod" else None,
         redoc_url="/redoc" if settings.app.env != "prod" else None,
+        lifespan=lifespan,
     )
 
     # 1. State attachment
@@ -38,11 +53,33 @@ def create_app(settings: PlatformSettings, pack: DomainPack) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # 3. Global Exception Handler (Mask internal error details & PII)
+    # 3. Persistence Failure Handler (Fail-closed 503 without leaking DSN/PII)
+    @app.exception_handler(PersistenceError)
+    async def persistence_exception_handler(
+        request: Request, exc: PersistenceError
+    ) -> JSONResponse:
+        correlation_id = f"corr_{uuid.uuid4().hex[:10]}"
+        safe_exc = sanitize_persistence_error(exc)
+        logger.error(
+            "Durable persistence error [correlation_id=%s]: %s",
+            correlation_id,
+            safe_exc,
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "PersistenceUnavailable",
+                "detail": "Durable persistence store unavailable; request was not committed.",
+                "code": "PERSISTENCE_UNAVAILABLE",
+                "correlation_id": correlation_id,
+            },
+        )
+
+    # 4. Global Exception Handler (Mask internal error details & PII)
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         correlation_id = f"corr_{uuid.uuid4().hex[:10]}"
-        safe_exc = PIIMasker.mask(str(exc), fail_closed=False)
+        safe_exc = sanitize_persistence_error(exc)
         logger.error("Unhandled platform error [correlation_id=%s]: %s", correlation_id, safe_exc)
         return JSONResponse(
             status_code=500,

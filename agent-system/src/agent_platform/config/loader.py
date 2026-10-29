@@ -32,7 +32,7 @@ def load_settings(
     else:
         config_dir = Path(config_dir)
 
-    target_env = env or os.getenv("APP_ENV", "dev")
+    target_env = env or os.getenv("APP_ENV") or os.getenv("PLATFORM_ENV") or "dev"
 
     # 1. Load base.yaml
     base_file = config_dir / "base.yaml"
@@ -76,8 +76,11 @@ def load_settings(
     if adapter_env := os.getenv("PERSISTENCE_ADAPTER"):
         merged["persistence"]["adapter"] = adapter_env
 
-    if pg_url_env := os.getenv("POSTGRES_URL"):
+    if pg_url_env := (os.getenv("AGENT_POSTGRES_URL") or os.getenv("POSTGRES_URL")):
         merged["persistence"]["postgres_url"] = pg_url_env
+
+    if pg_schema_env := os.getenv("AGENT_POSTGRES_SCHEMA"):
+        merged["persistence"]["postgres_schema"] = pg_schema_env
 
     if redis_url_env := os.getenv("REDIS_URL"):
         merged["persistence"]["redis_url"] = redis_url_env
