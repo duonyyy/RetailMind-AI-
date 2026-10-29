@@ -318,10 +318,26 @@ export function createMockDataSource(options: MockDbOptions = {}) {
             : [];
         }
         if (lowerSql.includes('from orders') || lowerSql.includes('orders')) {
+          const uniqueOrders = Array.from(new Map([...ordersStore.values()].map((o) => [o.id, o])).values());
+          if (typeof params?.[0] === 'boolean') {
+            const isAdmin = params[0] === true;
+            const custId = params[1] ? String(params[1]) : '';
+            const statusFilter = params[2] ? String(params[2]) : undefined;
+            const matches = uniqueOrders.filter((ord) => {
+              const custMatch = isAdmin || ord.customer_id === custId;
+              const statusMatch = statusFilter ? ord.status === statusFilter : true;
+              return custMatch && statusMatch;
+            });
+            if (lowerSql.includes('count(*)')) {
+              return [{ count: String(matches.length) }];
+            }
+            return matches;
+          }
+
           const ref = params && params[0] ? String(params[0]) : '';
           const isAdmin = params && params[1] === true;
           const custId = params && params[2] ? String(params[2]) : '';
-          for (const ord of ordersStore.values()) {
+          for (const ord of uniqueOrders) {
             if (ord.id === ref || ord.order_no === ref) {
               if (isAdmin || ord.customer_id === custId) {
                 return [ord];
@@ -378,6 +394,13 @@ export function createMockDataSource(options: MockDbOptions = {}) {
       }),
 
       find: jest.fn().mockImplementation(async (entityClass: any, opts: any) => {
+        if (entityClass === Order) {
+          const uniqueOrders = Array.from(new Map([...ordersStore.values()].map((o) => [o.id, o])).values());
+          if (opts?.where?.customer_id) {
+            return uniqueOrders.filter((o) => o.customer_id === opts.where.customer_id);
+          }
+          return uniqueOrders;
+        }
         if (entityClass === OrderItem) {
           const orderId = opts?.where?.order_id;
           return orderItemsStore.filter((i) => i.order_id === orderId);
@@ -536,6 +559,21 @@ export function createMockDataSource(options: MockDbOptions = {}) {
           save: jest.fn().mockImplementation(async (item: IdempotencyKey) => {
             idempotencyStore.set(item.key, item);
             return item;
+          }),
+        };
+      }
+      if (entityClass === Order) {
+        return {
+          findOne: jest.fn().mockImplementation(async (opts: any) => {
+            const id = opts?.where?.id;
+            return ordersStore.get(id) || null;
+          }),
+          find: jest.fn().mockImplementation(async (opts: any) => {
+            const uniqueOrders = Array.from(new Map([...ordersStore.values()].map((o) => [o.id, o])).values());
+            if (opts?.where?.customer_id) {
+              return uniqueOrders.filter((o) => o.customer_id === opts.where.customer_id);
+            }
+            return uniqueOrders;
           }),
         };
       }
