@@ -142,14 +142,7 @@ export class InternalAgentController {
     return { status: 'success', tool: 'create_support_ticket', data: res };
   }
 
-  // 13. Tính phạt vi phạm hợp đồng kinh tế (Điều 301 Luật Thương Mại)
-  @Post(['penalty-calculate', 'calculate_penalty'])
-  async penaltyCalculate(@Body() body: any) {
-    const res = await this.agentService.calculateContractPenalty(body || {});
-    return { status: 'success', tool: 'penalty_calculate', data: res };
-  }
-
-  // 14. Quản lý sản phẩm yêu thích (Favorites)
+  // 13. Quản lý sản phẩm yêu thích (Favorites)
   @Post(['manage-favorite', 'manage_favorite'])
   async manageFavorite(
     @Body() body: any,

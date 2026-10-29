@@ -17,7 +17,7 @@ export class AuditController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const result = await this.auditService.getLogs({
+    return this.auditService.getLogs({
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? parseInt(limit, 10) : 20,
       action,
@@ -26,9 +26,5 @@ export class AuditController {
       from,
       to,
     });
-    return {
-      status: 'success',
-      ...result,
-    };
   }
 }

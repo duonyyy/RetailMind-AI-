@@ -69,7 +69,10 @@ describe('OrdersService ACID Commerce Transaction & Idempotency Integration', ()
       expect(stockAfterCheckout.reservedQty).toBe(initialReserved + 2);
 
       // 2. Cancel order
-      const cancelRes = await ordersService.cancelOrder(order.orderId, 'Khách hàng hủy đơn mua');
+      const cancelRes = await ordersService.cancelOrder(order.orderId, 'Khách hàng hủy đơn mua', {
+        id: 'cust-restore-01',
+        role: 'CUSTOMER',
+      });
       expect(cancelRes.success).toBe(true);
       expect(cancelRes.status).toBe('CANCELLED');
 
@@ -289,7 +292,10 @@ describe('OrdersService ACID Commerce Transaction & Idempotency Integration', ()
         .spyOn(inventoryService, 'restoreStockInTx')
         .mockResolvedValue(undefined);
 
-      const cancelResult = await ordersService.cancelOrder('MWG-CANCEL-001', 'Khách đổi ý muốn mua máy khác');
+      const cancelResult = await ordersService.cancelOrder('MWG-CANCEL-001', 'Khách đổi ý muốn mua máy khác', {
+        id: '00000000-0000-0000-0000-000000000002',
+        role: 'CUSTOMER',
+      });
 
       expect(cancelResult.success).toBe(true);
       expect(cancelResult.status).toBe('CANCELLED');

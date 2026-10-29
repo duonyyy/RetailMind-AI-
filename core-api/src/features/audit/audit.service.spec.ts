@@ -182,8 +182,8 @@ describe('Audit Trail & Logging (SSOT Immobility & Traceability)', () => {
       });
 
       const response = await controller.getLogs('1', '10', 'INVENTORY_ADJUST');
-      expect(response.status).toBe('success');
       expect(response.items.length).toBeGreaterThanOrEqual(1);
+      expect(response.total).toBeGreaterThanOrEqual(1);
     });
   });
 });

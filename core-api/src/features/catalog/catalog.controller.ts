@@ -26,29 +26,19 @@ export class CatalogController {
     };
     const items = await this.catalogService.getProducts(filter);
     return {
-      status: 'success',
+      items,
       total: items.length,
-      data: items,
     };
   }
 
   @Get('products/:sku')
   async getProductBySku(@Param('sku') sku: string) {
-    const product = await this.catalogService.getProductBySku(sku);
-    return {
-      status: 'success',
-      data: product,
-    };
+    return this.catalogService.getProductBySku(sku);
   }
 
   @Get('compare')
   async compareProducts(@Query('skus') skus: string) {
-    const skuList = (skus || '').split(',').map(s => s.trim()).filter(Boolean);
-    const comparison = await this.catalogService.compareVariants(skuList);
-    return {
-      status: 'success',
-      total: comparison.length,
-      data: comparison,
-    };
+    const skuList = (skus || '').split(',').map((s) => s.trim()).filter(Boolean);
+    return this.catalogService.compareVariants(skuList);
   }
 }

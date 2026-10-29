@@ -13,10 +13,16 @@ export interface PreviewTokenPayload {
 }
 
 export class PreviewTokenHelper {
-  private static readonly SECRET =
-    process.env.PREVIEW_TOKEN_SECRET ||
-    process.env.JWT_SECRET ||
-    'retailmind_preview_token_secret_production_2026';
+  private static getSecret(): string {
+    const secret = process.env.PREVIEW_TOKEN_SECRET || process.env.JWT_SECRET;
+    if (!secret) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new BadRequestException('Chưa cấu hình khóa bảo mật Preview Token (PREVIEW_TOKEN_SECRET/JWT_SECRET).');
+      }
+      return 'retailmind_preview_token_dev_fallback_secret';
+    }
+    return secret;
+  }
 
   /**
    * Sinh Signed Preview Token có thời hạn đúng 10 phút (600 giây)
@@ -29,7 +35,7 @@ export class PreviewTokenHelper {
     const payloadB64 = Buffer.from(payloadJson, 'utf-8').toString('base64url');
 
     const signature = crypto
-      .createHmac('sha256', this.SECRET)
+      .createHmac('sha256', this.getSecret())
       .update(payloadB64)
       .digest('base64url');
 
@@ -55,7 +61,7 @@ export class PreviewTokenHelper {
     const [payloadB64, providedSig] = parts;
 
     const expectedSig = crypto
-      .createHmac('sha256', this.SECRET)
+      .createHmac('sha256', this.getSecret())
       .update(payloadB64)
       .digest('base64url');
 

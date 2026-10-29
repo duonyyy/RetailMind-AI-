@@ -7,8 +7,8 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { AuthService } from '../../features/auth/auth.service';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { AuthService } from '../auth.service';
+import { IS_PUBLIC_KEY } from '../../../shared/decorators/public.decorator';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -46,7 +46,7 @@ export class JwtAuthGuard implements CanActivate {
       request.user = { id: user.id, email: user.email, role: user.role, fullName: user.fullName };
 
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ForbiddenException) {
         throw err;
       }
@@ -55,8 +55,8 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   private extractTokenFromRequest(request: any): string | undefined {
-    const authHeader = request.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
+    const authHeader = request.headers?.authorization;
+    if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
       return authHeader.substring(7);
     }
 
@@ -68,4 +68,3 @@ export class JwtAuthGuard implements CanActivate {
     return undefined;
   }
 }
-

@@ -7,9 +7,13 @@ async function bootstrap() {
   assertProductionConfiguration();
   const app = await NestFactory.create(AppModule);
 
-  // 1. CORS Configuration
+  // 1. CORS Configuration (Allowlist strictly checked according to CODING_STANDARDS.md §8.4)
+  const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+    : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:4000'];
+
   app.enableCors({
-    origin: true,
+    origin: allowedOrigins,
     credentials: true,
   });
 

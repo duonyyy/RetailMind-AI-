@@ -16,8 +16,8 @@
     "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
-    "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
     "paths": {
       "@nestjs/bullmq/lib/*": ["node_modules/@nestjs/bullmq/dist/*"],
       "@nestjs/bullmq": ["node_modules/@nestjs/bullmq/dist/index.d.ts"]

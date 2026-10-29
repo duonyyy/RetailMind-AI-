@@ -320,19 +320,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
       expect(mockSupportService.createTicket).toHaveBeenCalled();
     });
 
-    it('13. penaltyCalculate should cap commercial penalty at 8% (Điều 301 LTM)', async () => {
-      const res = await controller.penaltyCalculate({
-        breach_value_vnd: 100000000,
-        agreed_rate_pct: 12,
-      });
-      expect(res.status).toBe('success');
-      expect(res.tool).toBe('penalty_calculate');
-      expect(res.data.is_capped_by_statute).toBe(true);
-      expect(res.data.applied_rate_pct).toBe('8%');
-      expect(res.data.penalty_amount_vnd).toBe('8000000');
-    });
-
-    it('14. manageFavorite should support add, remove, and toggle actions', async () => {
+    it('13. manageFavorite should support add, remove, and toggle actions', async () => {
       const addRes = await controller.manageFavorite(
         { sku: 'LT-ASUS-VIVO15-OLED', action: 'add' },
         'cust-1',

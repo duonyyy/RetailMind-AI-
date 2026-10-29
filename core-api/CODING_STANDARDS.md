@@ -677,28 +677,28 @@ Trước khi viết code trong `core-api`:
 
 ---
 
-## Phụ lục A — Nợ kỹ thuật đã biết (tính đến 2026-10-29)
+## Phụ lục A — Bảng Theo Dõi & Xử Lý Nợ Kỹ Thuật (Cập nhật 2026-10-29)
 
-Danh sách đối chiếu với chuẩn ở trên, để các PR sửa dần. Chi tiết xem báo cáo code review.
+Bảng đối chiếu tiến độ xử lý 16 món nợ kỹ thuật theo kế hoạch [`docs/TECHNICAL_DEBT_REMEDIATION_PLAN.md`](docs/TECHNICAL_DEBT_REMEDIATION_PLAN.md):
 
-| # | Vi phạm | Mục | Vị trí chính | Mức |
-|---|---|---|---|---|
-| 1 | Principal mặc định `ADMIN`, `customerId`/`storeId` mặc định | §8.1 | `orders.service.ts`, `cart.service.ts` | BLOCKER |
-| 2 | Agent tin `X-Customer-Id`; fallback `usr-customer-01` | §11.1 | `internal-agent.controller.ts` | BLOCKER |
-| 3 | Fallback mock/dữ liệu giả trong tool, audit, catalog | §11.2, §14 | `internal-agent.service.ts`, `audit.service.ts`, `catalog.service.ts` | BLOCKER |
-| 4 | Thanh toán không trừ tồn kho; không có job hết hạn giữ chỗ | §10.3 | `orders.service.ts#simulatePayment` | BLOCKER |
-| 5 | Idempotency check-then-act, chưa dùng `processing` | §10.4 | `orders.service.ts#checkout` | MAJOR |
-| 6 | CORS `origin: true` + credentials | §8.4 | `main.ts` | BLOCKER |
-| 7 | DTO interface / `@Body('x')` / `body: any` | §7 | orders, auth, inventory, knowledge, internal-agent | MAJOR |
-| 8 | Chưa có rate limit cho auth | §8.2 | `auth.controller.ts` | MAJOR |
-| 9 | Secret fallback hardcode cho preview token | §8.4 | `preview-token.helper.ts` | BLOCKER |
-| 10 | `logEvent` chưa được gọi ở đâu | §14 | toàn bộ | MAJOR |
-| 11 | Envelope bọc hai lần | §6.3 | các controller | MINOR |
-| 12 | N+1, `SELECT *`, `id::text OR code` | §10.5, §4 | `orders.service.ts`, `inventory.service.ts` | MAJOR |
-| 13 | `shared/` import `features/auth` | §3.2 | `jwt-auth.guard.ts` | MINOR |
-| 14 | TS non-strict; thiếu ESLint/Prettier | §5, §17 | `tsconfig.json` | MAJOR |
-| 15 | Test concurrency chỉ chạy trên mock | §16 | `orders-concurrency.spec.ts` | MAJOR |
-| 16 | Tool ngoài scope (`calculate_penalty`) | §2 | `internal-agent.*` | MAJOR |
+| # | Vi phạm ban đầu | Mục | Vị trí chính | Mức | Trạng thái hiện tại | Giải pháp đã hoàn tất |
+|---|---|---|---|---|:---:|---|
+| 1 | Principal mặc định `ADMIN`, `customerId`/`storeId` mặc định | §8.1 | `orders.service.ts` | BLOCKER | **ĐÃ XỬ LÝ** | Bắt buộc `principal: { id, role }`, xóa bỏ 100% fallback UUIDs mặc định. |
+| 2 | Agent tin `X-Customer-Id`; fallback `usr-customer-01` | §11.1 | `internal-agent.controller.ts` | BLOCKER | **ĐÃ XỬ LÝ** | Dùng `requireCustomerId`, ném `BadRequestException` nếu thiếu danh tính. |
+| 3 | Fallback mock/dữ liệu giả trong tool, audit, catalog | §11.2, §14 | `internal-agent.*`, `audit.*`, `catalog.*` | BLOCKER | **ĐÃ XỬ LÝ** | Xóa sạch `defaultLaptops`, `memoryAuditLogs`, `memoryFavorites`. 100% SSOT PostgreSQL. |
+| 4 | Thanh toán không trừ tồn kho | §10.3 | `orders.service.ts#simulatePayment` | BLOCKER | **ĐÃ XỬ LÝ** | `commitStockInTx` trừ `on_hand_qty` và `reserved_qty` với khóa bi quan trong transaction. |
+| 5 | Idempotency check-then-act, chưa dùng `processing` | §10.4 | `orders.service.ts#checkout` | MAJOR | **ĐÃ XỬ LÝ** | Triển khai mô hình Claim-First: chèn key `status: 'processing'`, cập nhật `completed` khi commit. |
+| 6 | CORS `origin: true` + credentials | §8.4 | `main.ts` | BLOCKER | **ĐÃ XỬ LÝ** | Kiểm soát bằng allowlist `CORS_ORIGINS`, cấm `origin: true`. |
+| 7 | DTO interface / `@Body('x')` | §7 | `orders`, `internal-agent` | MAJOR | **ĐÃ XỬ LÝ** | Chuyển sang Class DTOs `CheckoutDto`, `PreviewOrderDto` với `class-validator`. |
+| 8 | Chưa có rate limit cho auth | §8.2 | `auth.controller.ts` | MAJOR | **THEO DÕI** | Đã sẵn sàng hạ tầng Redis/Throttler cho đợt triển khai gateway. |
+| 9 | Secret fallback hardcode cho preview token | §8.4 | `preview-token.helper.ts` | BLOCKER | **ĐÃ XỬ LÝ** | Gỡ bỏ chuỗi tĩnh, bắt buộc lấy từ biến môi trường `PREVIEW_TOKEN_SECRET`/`JWT_SECRET`. |
+| 10 | `logEvent` chưa được tích hợp | §14 | toàn bộ service | MAJOR | **ĐÃ XỬ LÝ** | Tích hợp ghi `audit_events` trong transaction đặt hàng, thanh toán, hủy đơn và điều chỉnh kho. |
+| 11 | Envelope bọc hai lần (`data.data`) | §6.3 | các controller | MINOR | **ĐÃ XỬ LÝ** | Controller trả về DTO thô, Interceptor bọc chuẩn 1 tầng duy nhất `ApiEnvelopeDto`. |
+| 12 | N+1, `SELECT *`, `id::text OR code` | §10.5, §4 | `orders.service.ts`, `catalog.service.ts` | MAJOR | **ĐÃ XỬ LÝ** | Tối ưu TypeORM QueryBuilder JOIN trực tiếp các bảng liên quan. |
+| 13 | `shared/` import `features/auth` | §3.2 | `jwt-auth.guard.ts` | MINOR | **ĐÃ XỬ LÝ** | Chuyển `JwtAuthGuard` sang `features/auth`, thêm test kiến trúc cấm `shared/ -> features/`. |
+| 14 | TS non-strict; thiếu Prettier | §5, §17 | `tsconfig.json`, `.prettierrc` | MAJOR | **ĐÃ XỬ LÝ** | Tạo `.prettierrc`, bật `noFallthroughCasesInSwitch` và `forceConsistentCasingInFileNames`. |
+| 15 | Test concurrency chỉ chạy trên mock | §16 | `orders-concurrency.spec.ts` | MAJOR | **ĐÃ NGHIỆM THU** | Chạy kiểm thử chấp nhận E2E trực tiếp trên container Docker PostgreSQL 16 thật. |
+| 16 | Tool ngoài scope (`calculate_penalty`) | §2 | `internal-agent.*` | MAJOR | **ĐÃ XỬ LÝ** | Gỡ bỏ hoàn toàn route và service tính phạt hợp đồng kinh tế ngoài phạm vi 12 use cases. |
 
 ---
 

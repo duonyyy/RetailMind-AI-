@@ -48,7 +48,7 @@ describe('OrdersService (SSOT Commerce, ACID & Order Lifecycle)', () => {
 
   it('should calculate preview with exact Decimal precision and VAT', async () => {
     const items = [{ sku: 'LT-ASUS-VIVO15-OLED', quantity: 1 }];
-    const preview = await ordersService.calculatePreview(items);
+    const preview = await ordersService.calculatePreview(items, undefined, 'store-hcm-q1', 'cust-test-01');
 
     expect(preview.subtotalVnd).toBe('17990000');
     // VAT 10% of 17,990,000 = 1,799,000
@@ -63,7 +63,7 @@ describe('OrdersService (SSOT Commerce, ACID & Order Lifecycle)', () => {
 
   it('should apply discount code MWG_VIP500 correctly', async () => {
     const items = [{ sku: 'LT-ASUS-VIVO15-OLED', quantity: 1 }];
-    const preview = await ordersService.calculatePreview(items, 'MWG_VIP500');
+    const preview = await ordersService.calculatePreview(items, 'MWG_VIP500', 'store-hcm-q1', 'cust-test-01');
 
     expect(preview.discountVnd).toBe('500000');
     // Subtotal after discount = 17,990,000 - 500,000 = 17,490,000
@@ -117,12 +117,13 @@ describe('OrdersService (SSOT Commerce, ACID & Order Lifecycle)', () => {
 
   it('should validate Signed Preview Token during checkout', async () => {
     const items = [{ sku: 'LT-ASUS-VIVO15-OLED', quantity: 1 }];
-    const preview = await ordersService.calculatePreview(items, undefined, 'store-hcm-q1');
+    const preview = await ordersService.calculatePreview(items, undefined, 'store-hcm-q1', 'cust-token-01');
 
     // Valid checkout with preview token
     const order = await ordersService.checkout(
       {
         storeId: 'store-hcm-q1',
+        customerId: 'cust-token-01',
         items,
         previewToken: preview.previewToken,
       },
@@ -136,6 +137,7 @@ describe('OrdersService (SSOT Commerce, ACID & Order Lifecycle)', () => {
       ordersService.checkout(
         {
           storeId: 'store-hcm-q1',
+          customerId: 'cust-token-01',
           items,
           previewToken: tamperedToken,
         },
@@ -148,18 +150,25 @@ describe('OrdersService (SSOT Commerce, ACID & Order Lifecycle)', () => {
     const order = await ordersService.checkout(
       {
         storeId: 'store-hcm-q1',
+        customerId: 'cust-cancel-01',
         items: [{ sku: 'LT-ASUS-VIVO15-OLED', quantity: 1 }],
       },
       'idem-cancel-test-01',
     );
 
-    const cancelRes = await ordersService.cancelOrder(order.orderId, 'Khách đổi ý');
+    const cancelRes = await ordersService.cancelOrder(order.orderId, 'Khách đổi ý', {
+      id: 'cust-cancel-01',
+      role: 'CUSTOMER',
+    });
     expect(cancelRes.success).toBe(true);
     expect(cancelRes.status).toBe('CANCELLED');
 
     // Double cancel should throw ConflictException
     await expect(
-      ordersService.cancelOrder(order.orderId, 'Hủy lần 2'),
+      ordersService.cancelOrder(order.orderId, 'Hủy lần 2', {
+        id: 'cust-cancel-01',
+        role: 'CUSTOMER',
+      }),
     ).rejects.toThrow(ConflictException);
   });
 

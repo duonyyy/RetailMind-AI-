@@ -11,12 +11,7 @@ export class InventoryController {
   @Public()
   @Get('stores')
   async getStores() {
-    const stores = await this.inventoryService.getStores();
-    return {
-      status: 'success',
-      total: stores.length,
-      data: stores,
-    };
+    return this.inventoryService.getStores();
   }
 
   @Public()
@@ -25,11 +20,7 @@ export class InventoryController {
     @Query('storeId') storeId: string,
     @Query('variantId') variantId: string,
   ) {
-    const stock = await this.inventoryService.getStock(storeId, variantId);
-    return {
-      status: 'success',
-      data: stock,
-    };
+    return this.inventoryService.getStock(storeId, variantId);
   }
 
   @Roles('ADMIN')
@@ -41,7 +32,6 @@ export class InventoryController {
   ) {
     await this.inventoryService.reserveStock(storeId, variantId, quantity);
     return {
-      status: 'success',
       message: `Đã giữ chỗ thành công ${quantity} sản phẩm tại kho.`,
     };
   }
@@ -56,17 +46,12 @@ export class InventoryController {
     @CurrentUser() user?: AuthenticatedUser,
   ) {
     const actorId = user ? `admin:${user.id}` : 'admin';
-    const result = await this.inventoryService.adjustInventory(
+    return this.inventoryService.adjustInventory(
       storeId,
       variantId,
       newOnHandQty,
       reason,
       actorId,
     );
-    return {
-      status: 'success',
-      message: 'Điều chỉnh số lượng tồn kho thành công.',
-      data: result,
-    };
   }
 }

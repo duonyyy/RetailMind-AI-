@@ -9,8 +9,11 @@ import {
   Param,
   Query,
   BadRequestException,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
-import { OrdersService, CheckoutInputDTO, OrderItemInput } from './orders.service';
+import { OrdersService, OrderResultDTO, PreviewCalculationDTO } from './orders.service';
+import { CheckoutDto, PreviewOrderDto } from './dto/checkout.dto';
 
 @Roles('CUSTOMER', 'ADMIN')
 @Controller('orders')
@@ -19,34 +22,27 @@ export class OrdersController {
 
   @Post('preview')
   async preview(
-    @Body('items') items: OrderItemInput[],
-    @Body('discountCode') discountCode?: string,
-    @Body('storeId') storeId?: string,
+    @Body() dto: PreviewOrderDto,
     @CurrentUser() user?: AuthenticatedUser,
-  ) {
-    const calculation = await this.ordersService.calculatePreview(items, discountCode, storeId, user?.id);
-    return {
-      status: 'success',
-      data: calculation,
-    };
+  ): Promise<PreviewCalculationDTO> {
+    return this.ordersService.calculatePreview(dto.items, dto.discountCode, dto.storeId, user?.id);
   }
 
   @Post('checkout')
+  @HttpCode(HttpStatus.CREATED)
   async checkout(
-    @Body() dto: CheckoutInputDTO,
+    @Body() dto: CheckoutDto,
     @Headers('idempotency-key') idempotencyKey?: string,
     @CurrentUser() user?: AuthenticatedUser,
-  ) {
+  ): Promise<OrderResultDTO> {
     const key = idempotencyKey || (dto as any).idempotencyKey;
     if (!key) {
       throw new BadRequestException('Bắt buộc cung cấp Header "Idempotency-Key" để chốt đơn.');
     }
-    const order = await this.ordersService.checkout({ ...dto, customerId: user?.id }, key);
-    return {
-      status: 'success',
-      message: 'Đặt hàng thành công. Đã giữ chỗ tồn kho tại siêu thị.',
-      data: order,
-    };
+    if (!user?.id) {
+      throw new BadRequestException('Yêu cầu xác thực tài khoản để thực hiện chốt đơn.');
+    }
+    return this.ordersService.checkout({ ...dto, customerId: user.id }, key);
   }
 
   @Get()
@@ -56,24 +52,16 @@ export class OrdersController {
     @Query('limit') limit?: string,
     @Query('status') status?: string,
   ) {
-    const result = await this.ordersService.getOrders(user, {
+    return this.ordersService.getOrders(user, {
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? parseInt(limit, 10) : 20,
       status,
     });
-    return {
-      status: 'success',
-      ...result,
-    };
   }
 
   @Get(':id')
   async getOrder(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    const order = await this.ordersService.getOrder(id, user);
-    return {
-      status: 'success',
-      data: order,
-    };
+    return this.ordersService.getOrder(id, user);
   }
 
   @Post(':id/cancel')
@@ -82,12 +70,7 @@ export class OrdersController {
     @Body('reason') reason: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    const result = await this.ordersService.cancelOrder(id, reason, user);
-    return {
-      status: 'success',
-      message: result.message,
-      data: result,
-    };
+    return this.ordersService.cancelOrder(id, reason, user);
   }
 
   @Post(':id/simulate-payment')
@@ -95,12 +78,7 @@ export class OrdersController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    const result = await this.ordersService.simulatePayment(id, user);
-    return {
-      status: 'success',
-      message: 'Thanh toán mô phỏng thành công.',
-      data: result,
-    };
+    return this.ordersService.simulatePayment(id, user);
   }
 }
 
@@ -116,23 +94,15 @@ export class AdminOrdersController {
     @Query('limit') limit?: string,
     @Query('status') status?: string,
   ) {
-    const result = await this.ordersService.getOrders(user, {
+    return this.ordersService.getOrders(user, {
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? parseInt(limit, 10) : 20,
       status,
     });
-    return {
-      status: 'success',
-      ...result,
-    };
   }
 
   @Get(':id')
   async getOrder(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    const order = await this.ordersService.getOrder(id, user);
-    return {
-      status: 'success',
-      data: order,
-    };
+    return this.ordersService.getOrder(id, user);
   }
 }

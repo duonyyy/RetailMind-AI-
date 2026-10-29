@@ -465,6 +465,8 @@ export function createMockDataSource(options: MockDbOptions = {}) {
           for (const [id, it] of cartItemsStore.entries()) {
             if (it.cartId === target.cartId) cartItemsStore.delete(id);
           }
+        } else if (target?.key) {
+          idempotencyStore.delete(target.key);
         }
       }),
 
@@ -570,6 +572,10 @@ export function createMockDataSource(options: MockDbOptions = {}) {
           save: jest.fn().mockImplementation(async (item: IdempotencyKey) => {
             idempotencyStore.set(item.key, item);
             return item;
+          }),
+          delete: jest.fn().mockImplementation(async (opts: any) => {
+            const key = opts?.key;
+            if (key) idempotencyStore.delete(key);
           }),
         };
       }

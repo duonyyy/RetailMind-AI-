@@ -3,6 +3,7 @@ import * as path from 'path';
 
 describe('Enterprise Architecture Boundaries (Foodee Gem #1)', () => {
   const featuresRoot = path.resolve(__dirname, '../features');
+  const sharedRoot = path.resolve(__dirname, '../shared');
 
   function getAllTsFiles(dir: string): string[] {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -67,5 +68,26 @@ describe('Enterprise Architecture Boundaries (Foodee Gem #1)', () => {
 
     expect(violations).toEqual([]);
   });
-});
 
+  it('should strictly prohibit shared/ from importing from features/ (Clean Shared Layer)', () => {
+    const files = getAllTsFiles(sharedRoot);
+    const violations: string[] = [];
+
+    for (const file of files) {
+      const content = fs.readFileSync(file, 'utf-8');
+      const importRegex = /from\s+['"]([^'"]+)['"]/g;
+      let match: RegExpExecArray | null;
+
+      while ((match = importRegex.exec(content)) !== null) {
+        const importPath = match[1];
+        if (importPath.includes('features/')) {
+          violations.push(
+            `${path.relative(sharedRoot, file)} illegally imports from features ("${importPath}"). Shared layer must be independent!`,
+          );
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+});

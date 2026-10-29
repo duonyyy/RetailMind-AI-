@@ -1,6 +1,6 @@
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
-import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Reflector } from '@nestjs/core';
 
 describe('identity boundary', () => {

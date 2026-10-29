@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Optional,
   ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import Decimal from 'decimal.js';
@@ -94,8 +95,11 @@ export class OrdersService {
     manager?: EntityManager,
   ): Promise<PreviewCalculationDTO> {
     const dbManager = manager || this.db().manager;
-    const store = await this.inventoryService.resolveStore(dbManager, storeId || '10000000-0000-0000-0000-000000000001');
-    const validCustomerId = customerId || '00000000-0000-0000-0000-000000000002';
+    if (!storeId || !storeId.trim()) {
+      throw new BadRequestException('Mã chi nhánh siêu thị (storeId) là bắt buộc để tính giá xem trước.');
+    }
+    const store = await this.inventoryService.resolveStore(dbManager, storeId.trim());
+    const validCustomerId = customerId?.trim() || 'guest_preview';
     if (!Array.isArray(items) || !items.length) throw new BadRequestException('Giỏ hàng không được rỗng.');
     let subtotal = new Decimal(0);
     const calculatedItems: PreviewCalculationDTO['items'] = [];
@@ -155,7 +159,13 @@ export class OrdersService {
   async checkout(dto: CheckoutInputDTO, idempotencyKey: string): Promise<OrderResultDTO> {
     const db = this.db();
     if (!idempotencyKey) throw new BadRequestException('Cần cung cấp Idempotency-Key.');
-    const customerId = dto?.customerId || '00000000-0000-0000-0000-000000000002';
+    if (!dto?.customerId || !dto.customerId.trim()) {
+      throw new BadRequestException('Danh tính khách hàng (customerId) là bắt buộc để chốt đơn.');
+    }
+    if (!dto?.storeId || !dto.storeId.trim()) {
+      throw new BadRequestException('Mã chi nhánh siêu thị (storeId) là bắt buộc để chốt đơn.');
+    }
+    const customerId = dto.customerId.trim();
     const scopedKey = `${customerId}:${idempotencyKey}`;
 
     // 1. Calculate tamper-detection request hash
@@ -170,13 +180,18 @@ export class OrdersService {
     });
     const requestHash = createHash('sha256').update(requestHashPayload).digest('hex');
 
-    // 2. Check existing Idempotency Key (Tamper Detection & Replay Protection)
+    // 2. Check existing Idempotency Key (Tamper Detection, In-Progress check & Replay Protection)
     const existing = await db.getRepository(IdempotencyKey).findOne({ where: { key: scopedKey } });
-    if (existing?.responsePayload) {
-      if (existing.responsePayload._requestHash && existing.responsePayload._requestHash !== requestHash) {
-        throw new ConflictException('Idempotency payload mismatch: Yêu cầu không khớp với khóa idempotent đã dùng.');
+    if (existing) {
+      if (existing.status === 'processing') {
+        throw new ConflictException('Idempotency in progress: Giao dịch đang được xử lý, vui lòng không gửi trùng lặp.');
       }
-      return existing.responsePayload as OrderResultDTO;
+      if (existing.responsePayload) {
+        if (existing.responsePayload._requestHash && existing.responsePayload._requestHash !== requestHash) {
+          throw new ConflictException('Idempotency payload mismatch: Yêu cầu không khớp với khóa idempotent đã dùng.');
+        }
+        return existing.responsePayload as OrderResultDTO;
+      }
     }
 
     const runner = db.createQueryRunner();
@@ -184,6 +199,14 @@ export class OrdersService {
     try {
       await runner.startTransaction();
       try {
+        const idem = await runner.manager.save(
+          runner.manager.create(IdempotencyKey, {
+            key: scopedKey,
+            status: 'processing',
+            expiresAt: new Date(Date.now() + 24 * 3600 * 1000),
+          }),
+        );
+
         const store = await this.inventoryService.resolveStore(runner.manager, dto.storeId);
         const preview = await this.calculatePreview(dto.items, dto.discountCode, store.id, customerId, runner.manager);
         if (dto.previewToken) {
@@ -204,9 +227,6 @@ export class OrdersService {
           preview.items.map((it) => ({ variantId: it.sku, quantity: it.quantity })),
         );
         const orderNo = `MWG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
-        const idem = await runner.manager.save(
-          runner.manager.create(IdempotencyKey, { key: scopedKey, status: 'completed' }),
-        );
         const order = await runner.manager.save(
           runner.manager.create(Order, {
             order_no: orderNo,
@@ -245,6 +265,7 @@ export class OrdersService {
           idempotencyKey,
           items: preview.items,
         };
+        idem.status = 'completed';
         idem.targetId = order.id;
         idem.responsePayload = { ...result, _requestHash: requestHash };
         await runner.manager.save(idem);
@@ -279,9 +300,14 @@ export class OrdersService {
         }
 
         return result;
-      } catch (error) {
+      } catch (innerError) {
         await runner.rollbackTransaction();
-        throw error;
+        try {
+          await db.getRepository(IdempotencyKey).delete({ key: scopedKey });
+        } catch {
+          // ignore cleanup
+        }
+        throw innerError;
       }
     } finally {
       await runner.release();
@@ -289,7 +315,7 @@ export class OrdersService {
   }
 
   async getOrders(
-    principal: { id: string; role: string } = { id: 'system', role: 'ADMIN' },
+    principal: { id: string; role: string },
     options: { page?: number; limit?: number; status?: string } = {},
   ): Promise<{
     orders: OrderResultDTO[];
@@ -297,6 +323,9 @@ export class OrdersService {
     page: number;
     limit: number;
   }> {
+    if (!principal?.id) {
+      throw new UnauthorizedException('Danh tính người dùng là bắt buộc để xem danh sách đơn hàng.');
+    }
     const page = Math.max(1, options.page || 1);
     const limit = Math.max(1, Math.min(100, options.limit || 20));
     const offset = (page - 1) * limit;
@@ -357,9 +386,11 @@ export class OrdersService {
 
   async getOrder(
     orderIdOrNo: string,
-    principal: { id: string; role: string } = { id: 'system', role: 'ADMIN' },
+    principal: { id: string; role: string },
   ): Promise<OrderResultDTO> {
-    if (!principal) principal = { id: 'system', role: 'ADMIN' };
+    if (!principal?.id) {
+      throw new UnauthorizedException('Danh tính người dùng là bắt buộc để tra cứu đơn hàng.');
+    }
     const db = this.db();
     const rows = await db.manager.query(
       'SELECT * FROM orders WHERE (id::text = $1 OR order_no = $1) AND ($2 = true OR customer_id::text = $3)',
@@ -393,8 +424,11 @@ export class OrdersService {
   async cancelOrder(
     orderIdOrNo: string,
     reason = 'Khách hàng yêu cầu hủy đơn',
-    principal: { id: string; role: string } = { id: 'system', role: 'ADMIN' },
+    principal?: { id: string; role: string },
   ): Promise<{ success: boolean; orderId: string; orderNo: string; status: string; message: string }> {
+    if (!principal?.id) {
+      throw new UnauthorizedException('Danh tính người dùng là bắt buộc để hủy đơn hàng.');
+    }
     const runner = this.db().createQueryRunner();
     await runner.connect();
     try {
@@ -463,7 +497,7 @@ export class OrdersService {
 
   async simulatePayment(
     orderIdOrNo: string,
-    principal: { id: string; role: string } = { id: 'system', role: 'ADMIN' },
+    principal?: { id: string; role: string },
   ): Promise<{
     orderId: string;
     orderNo: string;
@@ -473,6 +507,9 @@ export class OrdersService {
     totalVnd: string;
     formattedTotal: string;
   }> {
+    if (!principal?.id) {
+      throw new UnauthorizedException('Danh tính người dùng là bắt buộc để thanh toán đơn hàng.');
+    }
     const runner = this.db().createQueryRunner();
     await runner.connect();
     try {

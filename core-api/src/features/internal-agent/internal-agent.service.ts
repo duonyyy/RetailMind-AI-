@@ -402,41 +402,7 @@ export class InternalAgentService {
   }
 
   /**
-   * Tool 13: Tính mức phạt vi phạm hợp đồng kinh tế theo Điều 301 Luật Thương Mại 2005 (trần 8%)
-   */
-  async calculateContractPenalty(args: {
-    breach_value_vnd: number;
-    agreed_rate_pct?: number;
-  }) {
-    if (!args.breach_value_vnd || args.breach_value_vnd < 0) {
-      throw new BadRequestException('Giá trị nghĩa vụ vi phạm phải là số dương.');
-    }
-    const breachValue = new Decimal(args.breach_value_vnd);
-    const agreedRate = new Decimal(
-      args.agreed_rate_pct !== undefined ? args.agreed_rate_pct : 8,
-    );
-
-    const ceilingRate = new Decimal(8);
-    const appliedRate = Decimal.min(agreedRate, ceilingRate);
-    const penaltyAmount = breachValue.times(appliedRate).dividedBy(100);
-
-    return {
-      statute: 'Điều 301 Luật Thương Mại 2005',
-      breach_value_vnd: breachValue.toString(),
-      agreed_rate_pct: agreedRate.toString(),
-      legal_ceiling_pct: '8%',
-      applied_rate_pct: `${appliedRate.toString()}%`,
-      penalty_amount_vnd: penaltyAmount.toString(),
-      formatted_penalty: `${new Intl.NumberFormat('vi-VN').format(penaltyAmount.toNumber())} ₫`,
-      is_capped_by_statute: agreedRate.greaterThan(ceilingRate),
-      note: agreedRate.greaterThan(ceilingRate)
-        ? 'Mức thỏa thuận vượt trần 8%, hệ thống tự động điều chỉnh về mức trần luật định.'
-        : 'Mức phạt hợp lệ theo thỏa thuận trong giới hạn trần luật định.',
-    };
-  }
-
-  /**
-   * Tool 14: Quản lý danh sách sản phẩm yêu thích (Favorites)
+   * Tool 13: Quản lý danh sách sản phẩm yêu thích (Favorites)
    */
   async manageFavorite(
     customerId: string,
