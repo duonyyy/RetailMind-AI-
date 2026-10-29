@@ -6,6 +6,7 @@ from typing import Optional
 import httpx
 from fastapi import Depends, Header, HTTPException, Request
 
+from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.state.principal import Principal, Role
 
 
@@ -63,15 +64,47 @@ def require_role(required_role: str):
 
 async def owned_thread(request: Request, principal: Principal, thread_id: Optional[str]) -> str:
     """Only server-created session IDs can be resumed by their authenticated owner."""
-    store = request.app.state.harness.kv_store
-    if thread_id:
-        if principal.role == Role.GUEST.value:
-            raise HTTPException(status_code=403, detail="Anonymous sessions cannot be resumed.")
-        owner = await store.get(f"chat_owner:{thread_id}")
-        if not owner or owner != {"user_id": principal.user_id, "tenant_id": principal.tenant_id}:
-            raise HTTPException(status_code=404, detail="Chat session not found.")
+    harness = getattr(request.app.state, "harness", None)
+    store = getattr(harness, "kv_store", None) if harness else None
+    if store is None:
+        raise HTTPException(status_code=503, detail="Session persistence unavailable.")
+
+    try:
+        if thread_id:
+            if principal.role == Role.GUEST.value:
+                raise HTTPException(status_code=403, detail="Anonymous sessions cannot be resumed.")
+            owner = await store.get(f"chat_owner:{thread_id}")
+            if (
+                not isinstance(owner, dict)
+                or owner.get("user_id") != principal.user_id
+                or owner.get("tenant_id") != principal.tenant_id
+            ):
+                raise HTTPException(status_code=404, detail="Chat session not found.")
+            return thread_id
+
+        thread_id = f"thread_{uuid.uuid4().hex}"
+        if principal.role != Role.GUEST.value:
+            if hasattr(store, "claim_or_verify_thread_owner"):
+                owner = await store.claim_or_verify_thread_owner(
+                    thread_id=thread_id,
+                    user_id=principal.user_id,
+                    tenant_id=principal.tenant_id,
+                    role=principal.role,
+                )
+                if (
+                    owner.get("user_id") != principal.user_id
+                    or owner.get("tenant_id") != principal.tenant_id
+                ):
+                    raise HTTPException(status_code=404, detail="Chat session not found.")
+            else:
+                await store.set(
+                    f"chat_owner:{thread_id}",
+                    {"user_id": principal.user_id, "tenant_id": principal.tenant_id},
+                )
         return thread_id
-    thread_id = f"thread_{uuid.uuid4().hex}"
-    if principal.role != Role.GUEST.value:
-        await store.set(f"chat_owner:{thread_id}", {"user_id": principal.user_id, "tenant_id": principal.tenant_id})
-    return thread_id
+    except HTTPException:
+        raise
+    except PermissionError:
+        raise HTTPException(status_code=404, detail="Chat session not found.")
+    except PersistenceError:
+        raise HTTPException(status_code=503, detail="Session persistence unavailable.")
