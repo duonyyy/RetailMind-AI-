@@ -21,6 +21,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
   let guard: InternalSecretGuard;
   let configService: ConfigService;
   const customerRequest = { internalUser: { id: 'cust-1', role: 'CUSTOMER' } };
+  const idemKey = '9d493fb7-ef26-4fc2-8e55-0d131047d21b';
 
   const mockInventoryService = {
     getStores: jest.fn().mockResolvedValue([
@@ -100,6 +101,8 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     }),
     addItem: jest.fn().mockResolvedValue({}),
     removeItem: jest.fn().mockResolvedValue({}),
+    addItemIdempotent: jest.fn().mockImplementation(async (customerId: string) => mockCartService.getCart(customerId)),
+    removeItemIdempotent: jest.fn().mockImplementation(async (customerId: string) => mockCartService.getCart(customerId)),
   };
 
   const mockSupportService = {
@@ -124,7 +127,7 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
       phone: '0912345678',
       permissions: ['order:create'],
     }),
-    setFavorite: jest.fn().mockImplementation((customerId: string, variantId: string, action: string) => {
+    setFavoriteIdempotent: jest.fn().mockImplementation((customerId: string, variantId: string, action: string, key: string) => {
       return Promise.resolve({
         isFavorited: action === 'add' ? true : action === 'remove' ? false : true,
       });
@@ -224,23 +227,23 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     });
 
     it('does not mutate favorites when the product cannot be verified', async () => {
-      mockCustomersService.setFavorite.mockClear();
+      mockCustomersService.setFavoriteIdempotent.mockClear();
       jest.spyOn((service as any).catalogService, 'getProductBySku').mockRejectedValue(new Error('catalog unavailable'));
-      await expect(service.manageFavorite('cust-1', { sku: 'ABC', action: 'add' })).rejects.toThrow();
-      expect(mockCustomersService.setFavorite).not.toHaveBeenCalled();
+      await expect(service.manageFavorite('cust-1', { sku: 'ABC', action: 'add' }, idemKey)).rejects.toThrow();
+      expect(mockCustomersService.setFavoriteIdempotent).not.toHaveBeenCalled();
     });
 
     it('rejects an unconfirmed favorite result', async () => {
-      mockCustomersService.setFavorite.mockResolvedValueOnce({ isFavorited: undefined });
-      await expect(service.manageFavorite('cust-1', { sku: 'LT-ASUS-VIVO15-OLED', action: 'add' }))
+      mockCustomersService.setFavoriteIdempotent.mockResolvedValueOnce({ isFavorited: undefined });
+      await expect(service.manageFavorite('cust-1', { sku: 'LT-ASUS-VIVO15-OLED', action: 'add' }, idemKey))
         .rejects.toThrow('Không thể xác nhận trạng thái yêu thích.');
     });
 
     it('rejects invalid actions and contradictory favorite results', async () => {
       await expect(service.manageFavorite('cust-1', { sku: 'ABC', action: 'invalid' as any }))
         .rejects.toThrow(BadRequestException);
-      mockCustomersService.setFavorite.mockResolvedValueOnce({ isFavorited: false });
-      await expect(service.manageFavorite('cust-1', { sku: 'LT-ASUS-VIVO15-OLED', action: 'add' }))
+      mockCustomersService.setFavoriteIdempotent.mockResolvedValueOnce({ isFavorited: false });
+      await expect(service.manageFavorite('cust-1', { sku: 'LT-ASUS-VIVO15-OLED', action: 'add' }, idemKey))
         .rejects.toThrow('Không thể xác nhận trạng thái yêu thích.');
     });
     it('1. catalogSearch should return typed envelope and matched products', async () => {
@@ -298,19 +301,19 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     });
 
     it('7. cartAdd should add item to cart via CartService', async () => {
-      const res = await controller.cartAdd({ sku: 'LT-ASUS-VIVO15-OLED', quantity: 2 }, customerRequest);
+      const res = await controller.cartAdd({ sku: 'LT-ASUS-VIVO15-OLED', quantity: 2 }, customerRequest, idemKey);
       expect(res.status).toBe('success');
       expect(res.tool).toBe('add_to_cart');
       expect(res.data.status).toBe('success');
-      expect(mockCartService.addItem).toHaveBeenCalled();
+      expect(mockCartService.addItemIdempotent).toHaveBeenCalled();
     });
 
     it('8. cartRemove should remove item from cart via CartService', async () => {
-      const res = await controller.cartRemove({ sku: 'LT-ASUS-VIVO15-OLED' }, customerRequest);
+      const res = await controller.cartRemove({ sku: 'LT-ASUS-VIVO15-OLED' }, customerRequest, idemKey);
       expect(res.status).toBe('success');
       expect(res.tool).toBe('remove_from_cart');
       expect(res.data.status).toBe('success');
-      expect(mockCartService.removeItem).toHaveBeenCalled();
+      expect(mockCartService.removeItemIdempotent).toHaveBeenCalled();
     });
 
     it('9. orderPreview should calculate preview and issue previewToken', async () => {
@@ -332,18 +335,19 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
     });
 
     it('11. orderCancel should execute cancellation with inventory restoration', async () => {
-      const res = await controller.orderCancel({ order_id: 'ORD-100201', reason: 'Đổi ý' }, customerRequest);
+      const res = await controller.orderCancel({ order_id: 'ORD-100201', reason: 'Đổi ý' }, customerRequest, idemKey);
       expect(res.status).toBe('success');
       expect(res.tool).toBe('cancel_simulated_order');
       expect(res.data.order_id).toBe('ORD-100201');
       expect(res.data.inventory_restored).toBe(true);
-      expect(mockOrdersService.cancelOrder).toHaveBeenCalledWith('ORD-100201', 'Đổi ý', { id: 'cust-1', role: 'CUSTOMER' });
+      expect(mockOrdersService.cancelOrder).toHaveBeenCalledWith('ORD-100201', 'Đổi ý', { id: 'cust-1', role: 'CUSTOMER' }, idemKey);
     });
 
     it('12. ticketCreate should create support ticket via SupportService', async () => {
       const res = await controller.ticketCreate(
         { order_id: 'ORD-100201', title: 'Máy lỗi', description: 'Màn hình bị nháy' },
         customerRequest,
+        '9d493fb7-ef26-4fc2-8e55-0d131047d21b',
       );
       expect(res.status).toBe('success');
       expect(res.tool).toBe('create_support_ticket');
@@ -355,20 +359,22 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
       const addRes = await controller.manageFavorite(
         { sku: 'LT-ASUS-VIVO15-OLED', action: 'add' },
         customerRequest,
+        idemKey,
       );
       expect(addRes.status).toBe('success');
       expect(addRes.data.action).toBe('add');
       expect(addRes.data.is_favorited).toBe(true);
-      expect(mockCustomersService.setFavorite).toHaveBeenCalledWith('cust-1', expect.any(String), 'add');
+      expect(mockCustomersService.setFavoriteIdempotent).toHaveBeenCalledWith('cust-1', expect.any(String), 'add', idemKey);
 
       const removeRes = await controller.manageFavorite(
         { sku: 'LT-ASUS-VIVO15-OLED', action: 'remove' },
         customerRequest,
+        idemKey,
       );
       expect(removeRes.status).toBe('success');
       expect(removeRes.data.action).toBe('remove');
       expect(removeRes.data.is_favorited).toBe(false);
-      expect(mockCustomersService.setFavorite).toHaveBeenCalledWith('cust-1', expect.any(String), 'remove');
+      expect(mockCustomersService.setFavoriteIdempotent).toHaveBeenCalledWith('cust-1', expect.any(String), 'remove', idemKey);
     });
 
     describe('Anti-IDOR Zero-Trust Customer Identity Validation', () => {
@@ -403,13 +409,13 @@ describe('InternalAgentGateway (Phase 5: Unlocked Tools & Anti-IDOR Security)', 
         expect(mockOrdersService.cancelOrder).not.toHaveBeenCalled();
       });
       it('ignores forged customer IDs and forwards the verified admin role', async () => {
-        await controller.cartAdd({ sku: 'ABC', quantity: 1, customer_id: 'victim' }, customerRequest);
-        expect(mockCartService.addItem).toHaveBeenLastCalledWith('cust-1', expect.anything());
+        await controller.cartAdd({ sku: 'ABC', quantity: 1, customer_id: 'victim' }, customerRequest, idemKey);
+        expect(mockCartService.addItemIdempotent).toHaveBeenLastCalledWith('cust-1', expect.anything(), idemKey);
         const admin = { internalUser: { id: 'admin-1', role: 'ADMIN' } };
         await controller.orderStatus({ order_id: 'ORD-100201', customer_id: 'victim' }, admin);
         expect(mockOrdersService.getOrder).toHaveBeenLastCalledWith('ORD-100201', { id: 'admin-1', role: 'ADMIN' });
-        await controller.orderCancel({ order_id: 'ORD-100201' }, admin);
-        expect(mockOrdersService.cancelOrder).toHaveBeenLastCalledWith('ORD-100201', expect.any(String), { id: 'admin-1', role: 'ADMIN' });
+        await controller.orderCancel({ order_id: 'ORD-100201' }, admin, idemKey);
+        expect(mockOrdersService.cancelOrder).toHaveBeenLastCalledWith('ORD-100201', expect.any(String), { id: 'admin-1', role: 'ADMIN' }, idemKey);
       });
     });
   });

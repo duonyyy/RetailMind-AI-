@@ -7,13 +7,14 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import Decimal from 'decimal.js';
 import { Cart } from './entities/cart.entity';
 import { CartItem } from './entities/cart-item.entity';
 import { CatalogService } from '../catalog/public-api';
 import { InventoryService } from '../inventory/public-api';
 import { AddToCartDTO, CartDTO, CartItemDTO } from './dto/cart.dto';
+import { transactionalIdempotency } from '../../shared/idempotency/transactional-idempotency';
 
 @Injectable()
 export class CartService {
@@ -47,11 +48,11 @@ export class CartService {
     return this.db().getRepository(CartItem);
   }
 
-  async getOrCreateActiveCart(customerId: string): Promise<Cart> {
+  async getOrCreateActiveCart(customerId: string, manager?: EntityManager): Promise<Cart> {
     if (!customerId || !customerId.trim()) {
       throw new BadRequestException('Mã khách hàng là bắt buộc để quản lý giỏ hàng.');
     }
-    const cartRepo = this.getCartRepo();
+    const cartRepo = manager ? manager.getRepository(Cart) : this.getCartRepo();
     let cart = await cartRepo.findOne({
       where: { customerId: customerId.trim(), status: 'active' },
       relations: ['items', 'items.variant'],
@@ -69,12 +70,12 @@ export class CartService {
     return cart;
   }
 
-  async getCart(customerId: string, storeId?: string): Promise<CartDTO> {
-    const cart = await this.getOrCreateActiveCart(customerId);
-    return this.mapCartToDto(cart, storeId);
+  async getCart(customerId: string, storeId?: string, manager?: EntityManager): Promise<CartDTO> {
+    const cart = await this.getOrCreateActiveCart(customerId, manager);
+    return this.mapCartToDto(cart, storeId, manager);
   }
 
-  async addItem(customerId: string, dto: AddToCartDTO): Promise<CartDTO> {
+  async addItem(customerId: string, dto: AddToCartDTO, manager?: EntityManager): Promise<CartDTO> {
     if (!dto?.sku || !dto.sku.trim()) {
       throw new BadRequestException('Mã SKU sản phẩm không được để trống.');
     }
@@ -83,18 +84,19 @@ export class CartService {
       throw new BadRequestException('Số lượng sản phẩm phải là số nguyên dương lớn hơn 0.');
     }
 
-    const cart = await this.getOrCreateActiveCart(customerId);
+    const cart = await this.getOrCreateActiveCart(customerId, manager);
     const targetStoreId = dto.storeId?.trim() || '10000000-0000-0000-0000-000000000001';
-    const store = await this.inventoryService.resolveStore(this.db().manager, targetStoreId);
-    const variant = await this.inventoryService.resolveVariant(this.db().manager, dto.sku.trim());
+    const currentManager = manager || this.db().manager;
+    const store = await this.inventoryService.resolveStore(currentManager, targetStoreId);
+    const variant = await this.inventoryService.resolveVariant(currentManager, dto.sku.trim());
 
     // Check live stock availability
-    const stock = await this.inventoryService.getStock(store.id, variant.id);
+    const stock = await this.inventoryService.getStock(store.id, variant.id, manager);
     if (stock.availableQty <= 0) {
       throw new ConflictException(`Sản phẩm "${variant.name}" hiện đã hết hàng khả dụng tại siêu thị.`);
     }
 
-    const cartItemRepo = this.getCartItemRepo();
+    const cartItemRepo = manager ? manager.getRepository(CartItem) : this.getCartItemRepo();
     const existingItem = (cart.items || []).find((i) => i.variantId === variant.id);
 
     const newQuantity = (existingItem?.quantity || 0) + quantity;
@@ -116,7 +118,16 @@ export class CartService {
       await cartItemRepo.save(newItem);
     }
 
-    return this.getCart(customerId, store.id);
+    return this.getCart(customerId, store.id, manager);
+  }
+
+  async addItemIdempotent(customerId: string, dto: AddToCartDTO, key: string): Promise<CartDTO> {
+    return this.db().transaction('SERIALIZABLE', manager =>
+      transactionalIdempotency(manager, customerId, 'add_to_cart', key,
+        { sku: dto.sku, quantity: dto.quantity, storeId: dto.storeId ?? null }, async () => {
+          await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`cart:${customerId}`]);
+          return this.addItem(customerId, dto, manager);
+        }));
   }
 
   async updateItemQuantity(
@@ -156,21 +167,29 @@ export class CartService {
     return this.getCart(customerId, store.id);
   }
 
-  async removeItem(customerId: string, sku: string, storeId?: string): Promise<CartDTO> {
+  async removeItem(customerId: string, sku: string, storeId?: string, manager?: EntityManager): Promise<CartDTO> {
     if (!sku || !sku.trim()) {
       throw new BadRequestException('Mã SKU không được để trống.');
     }
 
-    const cart = await this.getOrCreateActiveCart(customerId);
-    const variant = await this.inventoryService.resolveVariant(this.db().manager, sku.trim());
+    const cart = await this.getOrCreateActiveCart(customerId, manager);
+    const variant = await this.inventoryService.resolveVariant(manager || this.db().manager, sku.trim());
 
     const existingItem = (cart.items || []).find((i) => i.variantId === variant.id);
     if (!existingItem) {
       throw new NotFoundException(`Không tìm thấy sản phẩm với SKU "${sku}" trong giỏ hàng.`);
     }
 
-    await this.getCartItemRepo().delete(existingItem.id);
-    return this.getCart(customerId, storeId);
+    await (manager ? manager.getRepository(CartItem) : this.getCartItemRepo()).delete(existingItem.id);
+    return this.getCart(customerId, storeId, manager);
+  }
+
+  async removeItemIdempotent(customerId: string, sku: string, storeId: string | undefined, key: string): Promise<CartDTO> {
+    return this.db().transaction('SERIALIZABLE', manager =>
+      transactionalIdempotency(manager, customerId, 'remove_from_cart', key, { sku, storeId: storeId ?? null }, async () => {
+        await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`cart:${customerId}`]);
+        return this.removeItem(customerId, sku, storeId, manager);
+      }));
   }
 
   async clearCart(customerId: string): Promise<void> {
@@ -180,7 +199,7 @@ export class CartService {
     }
   }
 
-  private async mapCartToDto(cart: Cart, storeId?: string): Promise<CartDTO> {
+  private async mapCartToDto(cart: Cart, storeId?: string, manager?: EntityManager): Promise<CartDTO> {
     const items = cart.items || [];
     let subtotal = new Decimal(0);
     const mappedItems: CartItemDTO[] = [];
@@ -193,7 +212,7 @@ export class CartService {
       let unitPriceStr = item.variant?.price_vnd?.toString();
 
       if (!variantSku || !unitPriceStr) {
-        const resolved = await this.inventoryService.resolveVariant(this.db().manager, item.variantId);
+        const resolved = await this.inventoryService.resolveVariant(manager || this.db().manager, item.variantId);
         variantName = resolved.name;
         variantSku = resolved.sku;
         unitPriceStr = resolved.price_vnd;
@@ -205,7 +224,7 @@ export class CartService {
 
       let availableStock = 0;
       try {
-        const stock = await this.inventoryService.getStock(targetStoreId, item.variantId);
+        const stock = await this.inventoryService.getStock(targetStoreId, item.variantId, manager);
         availableStock = stock.availableQty;
       } catch {
         availableStock = 0;

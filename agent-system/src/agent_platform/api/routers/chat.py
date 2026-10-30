@@ -43,7 +43,7 @@ async def chat_endpoint(
     except PersistenceError:
         raise HTTPException(
             status_code=503,
-            detail="Durable persistence store unavailable; request was not committed.",
+            detail="Durable persistence store unavailable; operation outcome may be unknown. Check its status before retrying.",
         )
 
     citations = [ev.source_document for ev in (state.get("matched_evidence", []) if state.get("status") == "done" else [])]
@@ -82,7 +82,7 @@ async def chat_stream_endpoint(
                 "run.error",
                 {
                     "status": "persistence_error",
-                    "detail": "Durable persistence store unavailable; checkpoint was not committed.",
+                    "detail": "Durable persistence store unavailable; operation outcome may be unknown. Check its status before retrying.",
                 },
             )
             return

@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -59,4 +60,36 @@ def test_ambiguous_backend_response_blocks_new_call_id(monkeypatch, failure):
         assert first.is_error and second.error_code == 'unknown_outcome'
         assert len(calls) == 1
         assert not executor.idempotency._store
+    asyncio.run(run())
+
+
+def test_backend_receives_uuid4_key_and_same_call_replays_without_dispatch(monkeypatch):
+    registry = ToolRegistry()
+    registry.load_from_module_file(Path('domains/retail_store/tools.py'))
+    module = registry.get('create_support_ticket').func.__globals__
+    module['_NESTJS_OFFLINE_UNTIL'] = 0
+    headers_seen = []
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, url, json, headers):
+            headers_seen.append(headers)
+            return httpx.Response(200, json={'data': {'status': 'success', 'ticket_id': 'TCK-1', 'ticket': {'ticketCode': 'TCK-1', 'customerId': 'alice'}}})
+    monkeypatch.setattr(httpx, 'AsyncClient', Client)
+    executor = ToolExecutor(registry, PolicyEngine.load_from_file('domains/retail_store/policies.yaml'))
+    principal = Principal(user_id='alice', role='customer')
+    async def run():
+        token = _authorization.set('Bearer test-only')
+        try:
+            args = {'order_id': 'ORD-100201', 'title': 'Hỗ trợ', 'description': 'Cần được hỗ trợ'}
+            first = await executor.execute('create_support_ticket', args, principal, thread_id='thread', call_id='call')
+            again = await executor.execute('create_support_ticket', args, principal, thread_id='thread', call_id='call')
+        finally:
+            _authorization.reset(token)
+        assert not first.is_error and not again.is_error and first.output == again.output
+        assert len(headers_seen) == 1
+        backend_key = headers_seen[0]['Idempotency-Key']
+        assert uuid.UUID(backend_key).version == 4
+        assert next(iter(executor.idempotency._records.values()))['backend_idempotency_key'] == backend_key
     asyncio.run(run())

@@ -883,7 +883,7 @@ def test_7d_side_effect_tool_idempotency_postgres(isolated_pg_env):
             call_id="call_7d_ambig",
         )
         assert res_ambig.is_error
-        assert res_ambig.error_code == "unavailable"
+        assert res_ambig.error_code == "unknown_outcome"
         assert call_counter["count"] == 4
 
         # Even if backend mode is now "ok" and process restarts, retrying the same key is BLOCKED!
@@ -910,7 +910,7 @@ def test_7d_side_effect_tool_idempotency_postgres(isolated_pg_env):
             call_id="call_7d_to",
         )
         assert res_to.is_error
-        assert res_to.error_code == "timeout"
+        assert res_to.error_code == "unknown_outcome"
         assert call_counter["count"] == 5
 
         behavior["mode"] = "ok"

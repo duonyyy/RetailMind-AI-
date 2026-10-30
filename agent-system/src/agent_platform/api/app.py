@@ -71,7 +71,7 @@ def create_app(settings: PlatformSettings, pack: DomainPack) -> FastAPI:
             status_code=503,
             content={
                 "error": "PersistenceUnavailable",
-                "detail": "Durable persistence store unavailable; request was not committed.",
+                "detail": "Durable persistence store unavailable; operation outcome may be unknown. Check its status before retrying.",
                 "code": "PERSISTENCE_UNAVAILABLE",
                 "correlation_id": correlation_id,
             },

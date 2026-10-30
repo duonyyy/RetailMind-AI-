@@ -14,6 +14,13 @@ def create_tool_exec_node(executor: ToolExecutor):
         if not pending_calls:
             return {}
 
+        if len(pending_calls) > 1 and any(
+            executor.registry.get(call.get("name", "")) and executor.registry.get(call.get("name", "")).side_effect
+            for call in pending_calls
+        ):
+            return {"pending_tool_calls": [], "status": "abstained", "verified_commerce_answer": None,
+                    "final_answer": "Vui lòng thực hiện từng thao tác riêng để có thể xác nhận kết quả."}
+
         principal = state["principal"]
         thread_id = state.get("thread_id", "thread_default")
         run_id = state.get("run_id", "run_default")
@@ -23,6 +30,7 @@ def create_tool_exec_node(executor: ToolExecutor):
         new_evidence: List[Evidence] = []
         awaiting_approval = False
         unavailable_message = None
+        unknown_outcome = False
         approval_call = None
         verified_commerce_answer = None
 
@@ -80,8 +88,16 @@ def create_tool_exec_node(executor: ToolExecutor):
             if awaiting_approval:
                 break
 
+            spec = executor.registry.get(tool_name)
+            if result.is_error and spec and spec.side_effect:
+                unknown_outcome = result.error_code in ("unknown_outcome", "idempotency_in_progress")
+                unavailable_message = ("Chưa xác định được kết quả thao tác; cần đối soát trước khi thử lại."
+                                       if unknown_outcome else "Thao tác thất bại hoặc chưa được gửi; chưa có thay đổi được xác nhận.")
+                break
+
             if result.error_code in ("unavailable", "timeout", "unknown_outcome", "idempotency_in_progress", "sensitive_input_unavailable"):
                 unavailable_message = masked_output_str
+                unknown_outcome = result.error_code == "unknown_outcome"
                 break
 
             # Tool output alone is not a verified document version or a citation.
@@ -96,11 +112,19 @@ def create_tool_exec_node(executor: ToolExecutor):
         }
 
         if unavailable_message:
-            updates["status"] = "abstained"
+            updates["status"] = "unknown_outcome" if unknown_outcome else "abstained"
             updates["final_answer"] = unavailable_message
         elif awaiting_approval:
             updates["status"] = "awaiting_approval"
             updates["approval_call"] = approval_call
+        elif verified_commerce_answer:
+            # Render a validated Core result directly; a second model turn must
+            # neither paraphrase it nor invent additional business claims.
+            updates["final_answer"] = verified_commerce_answer
+            updates["grounding_status"] = "verified_commerce"
+            updates["grounding_score"] = None
+            updates["matched_evidence"] = []
+            updates["status"] = "done"
 
         return updates
 

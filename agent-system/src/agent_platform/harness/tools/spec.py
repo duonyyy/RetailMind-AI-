@@ -8,6 +8,12 @@ class ToolUnavailableError(Exception):
 class ConfirmedOrderStatus(dict):
     """Internal marker produced only after the Core order-status contract is validated."""
 
+class ConfirmedCatalogRead(dict):
+    """Internal marker produced after validating a Core catalog response."""
+
+class ConfirmedCartRead(dict):
+    """Internal marker produced after validating a customer-scoped Core cart."""
+
 class ToolContext(BaseModel):
     """Contextual metadata injected by server into tool execution."""
     principal: Principal

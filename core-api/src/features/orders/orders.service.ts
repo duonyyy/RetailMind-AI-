@@ -19,6 +19,7 @@ import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { IdempotencyKey } from './entities/idempotency-key.entity';
 import { randomUUID, createHash } from 'crypto';
+import { transactionalIdempotency } from '../../shared/idempotency/transactional-idempotency';
 
 export interface OrderItemInput {
   sku: string;
@@ -425,6 +426,7 @@ export class OrdersService {
     orderIdOrNo: string,
     reason = 'Khách hàng yêu cầu hủy đơn',
     principal?: { id: string; role: string },
+    idempotencyKey?: string,
   ): Promise<{ success: boolean; orderId: string; orderNo: string; status: string; message: string }> {
     if (!principal?.id) {
       throw new UnauthorizedException('Danh tính người dùng là bắt buộc để hủy đơn hàng.');
@@ -445,6 +447,7 @@ export class OrdersService {
           throw new ForbiddenException('Không có quyền hủy đơn hàng của người khác.');
         }
 
+        const cancel = async () => {
         if (order.status === 'cancelled') throw new ConflictException('Đơn hàng đã bị hủy.');
         if (order.status === 'completed') throw new ConflictException('Không thể hủy đơn hàng đã hoàn tất/thanh toán.');
 
@@ -477,8 +480,6 @@ export class OrdersService {
           );
         }
 
-        await runner.commitTransaction();
-
         return {
           success: true,
           orderId: order.id,
@@ -486,6 +487,13 @@ export class OrdersService {
           status: 'CANCELLED',
           message: `Đơn hàng ${order.order_no} đã được hủy. Lý do: ${reason}.`,
         };
+        };
+        const result = idempotencyKey !== undefined
+          ? await transactionalIdempotency(runner.manager, principal.id, 'cancel_simulated_order', idempotencyKey,
+              { orderIdOrNo, reason }, cancel)
+          : await cancel();
+        await runner.commitTransaction();
+        return result;
       } catch (error) {
         await runner.rollbackTransaction();
         throw error;

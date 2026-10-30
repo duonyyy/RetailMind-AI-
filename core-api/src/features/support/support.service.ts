@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { SupportTicket } from '../orders/public-api';
+import { transactionalIdempotency } from '../../shared/idempotency/transactional-idempotency';
 
 export interface CreateTicketDTO {
   orderId?: string;
@@ -39,7 +40,7 @@ export class SupportService {
     @Optional() private readonly dataSource?: DataSource,
   ) {}
 
-  async createTicket(customerId: string, dto: CreateTicketDTO): Promise<TicketResultDTO> {
+  async createTicket(customerId: string, dto: CreateTicketDTO, idempotencyKey?: string): Promise<TicketResultDTO> {
     if (!dto || typeof dto.title !== 'string' || typeof dto.description !== 'string' || !dto.title.trim() || !dto.description.trim() || dto.title.length > 255 || dto.description.length > 2000) {
       throw new BadRequestException('Tiêu đề và nội dung khiếu nại không được để trống.');
     }
@@ -58,14 +59,21 @@ export class SupportService {
       }
       const orders = await manager.query('SELECT id FROM orders WHERE customer_id = $1 AND (id::text = $2 OR order_no = $2)', [customerId, dto.orderId.trim()]);
       if (!orders.length) throw new NotFoundException('Không tìm thấy đơn hàng.');
-      const repo = manager.getRepository(SupportTicket);
-      const saved = await repo.save(repo.create({
+      const create = async () => {
+        const repo = manager.getRepository(SupportTicket);
+        const saved = await repo.save(repo.create({
         ticketCode: `TCK-${randomUUID()}`, orderId: String(orders[0].id), customerId,
         title: dto.title.trim(), description: dto.description.trim(), status: 'OPEN',
       }));
-      return { id: saved.id, ticketCode: saved.ticketCode, orderId: saved.orderId,
-        customerId: saved.customerId, title: saved.title, description: saved.description,
-        status: saved.status, createdAt: saved.createdAt.toISOString() };
+        return { id: saved.id, ticketCode: saved.ticketCode, orderId: saved.orderId,
+          customerId: saved.customerId, title: saved.title, description: saved.description,
+          status: saved.status, createdAt: saved.createdAt.toISOString() };
+      };
+      if (idempotencyKey !== undefined) {
+        return transactionalIdempotency(manager, customerId, 'create_support_ticket', idempotencyKey,
+          { orderId: dto.orderId!.trim(), title: dto.title.trim(), description: dto.description.trim() }, create);
+      }
+      return create();
       });
     } catch (error) {
       if (error instanceof HttpException) throw error;

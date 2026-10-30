@@ -95,13 +95,13 @@ def test_zero_stock_is_valid_and_not_an_error(registry, monkeypatch):
 
 
 @pytest.mark.parametrize("name,args,payload", [
-    ("view_cart", {}, {"subtotal_vnd": "0", "items": []}),
-    ("add_to_cart", {"sku": "ABC"}, {"status": "success", "cart": {"items": []}}),
-    ("remove_from_cart", {"sku": "ABC"}, {"status": "success", "cart": {"items": []}}),
+    ("view_cart", {}, {"customer_id": "alice", "total_items": 0, "subtotal_vnd": "0", "vat_vnd": "0", "total_vnd": "0", "items": []}),
+    ("add_to_cart", {"sku": "ABC"}, {"status": "success", "cart": {"customer_id": "alice", "items": []}}),
+    ("remove_from_cart", {"sku": "ABC"}, {"status": "success", "cart": {"customer_id": "alice", "items": []}}),
     ("preview_order", {"sku": "ABC"}, {"previewToken": "signed", "totalVnd": "0"}),
     ("query_order_status", {"order_id": "ORD-100201"}, {"order_id": "ORD-100201", "order_status": "PENDING"}),
-    ("cancel_simulated_order", {"order_id": "ORD-100201", "reason": "khong can"}, {"status": "success", "order_id": "ORD-100201"}),
-    ("create_support_ticket", {"title": "ho tro", "description": "can ho tro"}, {"status": "success", "ticket_id": "TCK-1"}),
+    ("cancel_simulated_order", {"order_id": "ORD-100201", "reason": "khong can"}, {"status": "success", "order_id": "ORD-100201", "action": "CANCELLED"}),
+    ("create_support_ticket", {"title": "ho tro", "description": "can ho tro"}, {"status": "success", "ticket_id": "TCK-1", "ticket": {"ticketCode": "TCK-1", "customerId": "alice"}}),
 ])
 def test_confirmed_backend_result_is_forwarded(registry, monkeypatch, name, args, payload):
     async def backend(*args, **kwargs): return payload

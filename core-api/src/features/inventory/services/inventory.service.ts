@@ -38,8 +38,8 @@ export class InventoryService {
     return rows.map((r: any) => ({ id: r.id, code: r.code, name: r.name, address: r.display_address || '', phone: r.phone_number || '' }));
   }
 
-  async getStock(storeId: string, variantId: string): Promise<StockDTO> {
-    const manager = this.db().manager;
+  async getStock(storeId: string, variantId: string, transactionManager?: EntityManager): Promise<StockDTO> {
+    const manager = transactionManager || this.db().manager;
     const store = await this.resolveStore(manager, storeId);
     const variant = await this.resolveVariant(manager, variantId);
     const inventory = await manager.findOne(Inventory, { where: { store_id: store.id, variant_id: variant.id } });

@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Req,
+  Headers,
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
@@ -77,9 +78,10 @@ export class InternalAgentController {
   async cartAdd(
     @Body() body: any,
     @Req() request: any,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     const customerId = this.requester(request).id;
-    const res = await this.agentService.addToCart(customerId, body || {});
+    const res = await this.agentService.addToCart(customerId, body || {}, idempotencyKey);
     return { status: 'success', tool: 'add_to_cart', data: res };
   }
 
@@ -89,9 +91,10 @@ export class InternalAgentController {
   async cartRemove(
     @Body() body: any,
     @Req() request: any,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     const customerId = this.requester(request).id;
-    const res = await this.agentService.removeFromCart(customerId, body || {});
+    const res = await this.agentService.removeFromCart(customerId, body || {}, idempotencyKey);
     return { status: 'success', tool: 'remove_from_cart', data: res };
   }
 
@@ -124,8 +127,9 @@ export class InternalAgentController {
   async orderCancel(
     @Body() body: any,
     @Req() request: any,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    const res = await this.agentService.cancelOrder(body || {}, this.requester(request));
+    const res = await this.agentService.cancelOrder(body || {}, this.requester(request), idempotencyKey);
     return { status: 'success', tool: 'cancel_simulated_order', data: res };
   }
 
@@ -135,9 +139,10 @@ export class InternalAgentController {
   async ticketCreate(
     @Body() body: any,
     @Req() request: any,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     const customerId = this.requester(request).id;
-    const res = await this.agentService.createSupportTicket(customerId, body || {});
+    const res = await this.agentService.createSupportTicket(customerId, body || {}, idempotencyKey);
     return { status: 'success', tool: 'create_support_ticket', data: res };
   }
 
@@ -147,9 +152,10 @@ export class InternalAgentController {
   async manageFavorite(
     @Body() body: any,
     @Req() request: any,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     const customerId = this.requester(request).id;
-    const res = await this.agentService.manageFavorite(customerId, body || {});
+    const res = await this.agentService.manageFavorite(customerId, body || {}, idempotencyKey);
     return { status: 'success', tool: 'manage_favorite', data: res };
   }
 }

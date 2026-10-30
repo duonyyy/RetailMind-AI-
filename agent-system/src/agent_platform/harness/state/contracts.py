@@ -57,4 +57,4 @@ class AgentState(TypedDict):
     matched_evidence: List[Evidence]
     verified_commerce_answer: Optional[str]
     memory_context: Optional[str]
-    status: Literal["running", "awaiting_approval", "done", "abstained", "failed"]
+    status: Literal["running", "awaiting_approval", "done", "abstained", "failed", "unknown_outcome"]

@@ -61,6 +61,10 @@ def build_orchestration_graph(
             return "abstain"
         if state.get("status") == "awaiting_approval":
             return END
+        if state.get("status") == "unknown_outcome":
+            return END
+        if state.get("status") == "done" and state.get("grounding_status") == "verified_commerce":
+            return END
         return "agent"
 
     builder.add_conditional_edges("tool_exec", route_after_tool_exec)

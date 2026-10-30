@@ -55,7 +55,8 @@ def test_unconfirmed_results_never_return_success(registry, monkeypatch, name, a
             return httpx.Response(200, json={'data': {'status': 'success', 'laptops': 'bad', 'comparison': 'bad'}})
     monkeypatch.setattr(httpx, 'AsyncClient', Client)
     result, executor = run_tool(registry, name, args)
-    assert result.is_error and result.error_code == 'unavailable'
+    assert result.is_error
+    assert result.error_code == ('unknown_outcome' if name == 'manage_favorite' else 'unavailable')
     assert not executor.idempotency._store
 
 

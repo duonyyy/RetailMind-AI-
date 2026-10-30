@@ -11,7 +11,7 @@ import { OrdersService } from '../orders/public-api';
 import { KnowledgeService } from '../knowledge/public-api';
 import { SupportService } from '../support/public-api';
 import { CustomersService } from '../customers/public-api';
-import { CartService } from '../cart/public-api';
+import { CartService, type CartDTO } from '../cart/public-api';
 import Decimal from 'decimal.js';
 
 @Injectable()
@@ -180,6 +180,10 @@ export class InternalAgentService {
       throw new ServiceUnavailableException('Dịch vụ giỏ hàng hiện không khả dụng.');
     }
     const cart = await this.cartService.getCart(customerId);
+    return this.formatCart(customerId, cart);
+  }
+
+  private formatCart(customerId: string, cart: CartDTO) {
     return {
       status: 'success',
       customer_id: customerId,
@@ -208,6 +212,7 @@ export class InternalAgentService {
   async addToCart(
     customerId: string,
     args: { sku?: string; variant_id?: string; quantity?: number; store_id?: string },
+    idempotencyKey?: string,
   ) {
     if (!customerId || customerId === 'guest_user') {
       throw new BadRequestException('Mã khách hàng là bắt buộc để thêm vào giỏ hàng.');
@@ -216,13 +221,16 @@ export class InternalAgentService {
     if (!targetSku) {
       throw new BadRequestException('Mã SKU hoặc variant_id là bắt buộc.');
     }
-    const qty = args.quantity && args.quantity > 0 ? args.quantity : 1;
+    const qty = args.quantity ?? 1;
+    if (!Number.isSafeInteger(qty) || qty < 1) {
+      throw new BadRequestException('Số lượng sản phẩm phải là số nguyên dương.');
+    }
     if (!this.cartService) {
       throw new ServiceUnavailableException('Dịch vụ giỏ hàng hiện không khả dụng.');
     }
-
-    await this.cartService.addItem(customerId, { sku: targetSku, quantity: qty, storeId: args.store_id });
-    const cart = await this.viewCart(customerId);
+    if (!idempotencyKey) throw new BadRequestException('Cần Idempotency-Key để thêm vào giỏ hàng.');
+    const result = await this.cartService.addItemIdempotent(customerId, { sku: targetSku, quantity: qty, storeId: args.store_id }, idempotencyKey);
+    const cart = this.formatCart(customerId, result);
 
     return {
       status: 'success',
@@ -234,7 +242,7 @@ export class InternalAgentService {
   /**
    * Tool 8: Xóa sản phẩm khỏi giỏ hàng (PostgreSQL SSOT)
    */
-  async removeFromCart(customerId: string, args: { sku?: string; variant_id?: string }) {
+  async removeFromCart(customerId: string, args: { sku?: string; variant_id?: string }, idempotencyKey?: string) {
     if (!customerId || customerId === 'guest_user') {
       throw new BadRequestException('Mã khách hàng là bắt buộc để xóa khỏi giỏ hàng.');
     }
@@ -245,9 +253,9 @@ export class InternalAgentService {
     if (!this.cartService) {
       throw new ServiceUnavailableException('Dịch vụ giỏ hàng hiện không khả dụng.');
     }
-
-    await this.cartService.removeItem(customerId, targetSku);
-    const cart = await this.viewCart(customerId);
+    if (!idempotencyKey) throw new BadRequestException('Cần Idempotency-Key để xóa khỏi giỏ hàng.');
+    const result = await this.cartService.removeItemIdempotent(customerId, targetSku, undefined, idempotencyKey);
+    const cart = this.formatCart(customerId, result);
 
     return {
       status: 'success',
@@ -339,6 +347,7 @@ export class InternalAgentService {
   async cancelOrder(
     args: { order_id: string; reason?: string },
     requester?: { id: string; role: string },
+    idempotencyKey?: string,
   ) {
     if (!args.order_id) {
       throw new BadRequestException('Mã đơn hàng là bắt buộc.');
@@ -349,8 +358,10 @@ export class InternalAgentService {
     }
     const principal = { id: requesterId, role: requester!.role };
 
+    if (!idempotencyKey) throw new BadRequestException('Cần Idempotency-Key để hủy đơn hàng.');
+
     const reason = args.reason || 'Khách hàng yêu cầu hủy đơn qua tác tử AI';
-    const result = await this.ordersService.cancelOrder(args.order_id, reason, principal);
+    const result = await this.ordersService.cancelOrder(args.order_id, reason, principal, idempotencyKey);
 
     return {
       status: 'success',
@@ -369,6 +380,7 @@ export class InternalAgentService {
   async createSupportTicket(
     customerId: string,
     args: { order_id?: string; title: string; description: string },
+    idempotencyKey?: string,
   ) {
     if (!customerId || customerId === 'guest_user') {
       throw new BadRequestException('Mã khách hàng là bắt buộc để tạo phiếu hỗ trợ.');
@@ -390,12 +402,15 @@ export class InternalAgentService {
       }
     }
 
+    if (!idempotencyKey) {
+      throw new BadRequestException('Cần Idempotency-Key để tạo phiếu hỗ trợ.');
+    }
     const created = await this.supportService.createTicket(customerId, {
       orderId: args.order_id,
       title: args.title.trim(),
       description: args.description.trim(),
       confirmedProfilePhone: phone,
-    });
+    }, idempotencyKey);
 
     return {
       status: 'success',
@@ -411,6 +426,7 @@ export class InternalAgentService {
   async manageFavorite(
     customerId: string,
     args: { sku?: string; variant_id?: string; action?: 'add' | 'remove' | 'toggle' },
+    idempotencyKey?: string,
   ) {
     if (!customerId || customerId === 'guest_user') {
       throw new BadRequestException('Mã khách hàng là bắt buộc để quản lý danh sách yêu thích.');
@@ -427,12 +443,13 @@ export class InternalAgentService {
     if (!this.customersService) {
       throw new ServiceUnavailableException('Dịch vụ quản lý yêu thích hiện không khả dụng.');
     }
+    if (!idempotencyKey) throw new BadRequestException('Cần Idempotency-Key để cập nhật yêu thích.');
     const product = await this.catalogService.getProductBySku(targetSku);
     if (!product?.id) {
       throw new ServiceUnavailableException('Không thể xác nhận sản phẩm yêu thích.');
     }
     const variantId = product.id;
-    const toggled = await this.customersService.setFavorite(customerId, variantId, action);
+    const toggled = await this.customersService.setFavoriteIdempotent(customerId, variantId, action, idempotencyKey);
     if (typeof toggled?.isFavorited !== 'boolean' ||
         (action !== 'toggle' && toggled.isFavorited !== (action === 'add'))) {
       throw new ServiceUnavailableException('Không thể xác nhận trạng thái yêu thích.');

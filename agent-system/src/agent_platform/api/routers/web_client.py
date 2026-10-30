@@ -101,7 +101,7 @@ async def chat_stream_endpoint(
                 thread_id=thread_id,
             )
         except PersistenceError:
-            err_msg = "Hệ thống lưu trữ bền vững đang gián đoạn; tác vụ chưa được ghi nhận."
+            err_msg = "Hệ thống lưu trữ đang gián đoạn; chưa xác định được kết quả thao tác. Hãy kiểm tra trạng thái trước khi thử lại."
             yield f"data: {json.dumps({'type': 'error', 'code': 'persistence_unavailable', 'message': err_msg})}\n\n"
             yield "data: [DONE]\n\n"
             return
@@ -148,7 +148,7 @@ async def chat_stream_endpoint(
         # Emit final answer
         final_ans = state.get("final_answer") or "Yêu cầu của bạn đã được ghi nhận."
         grounding = state.get("grounding_score")
-        yield f"data: {json.dumps({'type': 'answer', 'content': final_ans, 'grounding_score': grounding, 'grounding_status': state.get('grounding_status')})}\n\n"
+        yield f"data: {json.dumps({'type': 'answer', 'content': final_ans, 'status': state.get('status'), 'grounding_score': grounding, 'grounding_status': state.get('grounding_status')})}\n\n"
 
         # Terminating frame
         yield "data: [DONE]\n\n"
@@ -215,7 +215,7 @@ async def chat_sync_endpoint(req: LegacyChatRequest, request: Request, principal
     ]
 
     return {
-        "status": "awaiting_approval" if requires_approval else ("error" if state.get("status") in ("abstained", "failed") else "success"),
+        "status": "awaiting_approval" if requires_approval else ("unknown_outcome" if state.get("status") == "unknown_outcome" else ("error" if state.get("status") in ("abstained", "failed") else "success")),
         "session_id": thread_id,
         "final_answer": state.get("final_answer") or "Yêu cầu đã được tiếp nhận.",
         "grounding_score": state.get("grounding_score"),

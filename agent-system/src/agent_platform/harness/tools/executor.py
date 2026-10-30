@@ -1,11 +1,13 @@
 import asyncio
 import inspect
 import json
+import uuid
 from typing import Dict, Any, Optional
 from pydantic import ValidationError
 from agent_platform.harness.state.principal import Principal
 from agent_platform.harness.tools.registry import ToolRegistry
-from agent_platform.harness.tools.spec import ToolContext, ToolUnavailableError, ConfirmedOrderStatus
+from agent_platform.harness.tools.spec import ToolContext, ToolUnavailableError, ConfirmedOrderStatus, ConfirmedCatalogRead, ConfirmedCartRead
+from agent_platform.harness.tools.commerce_contracts import ConfirmedCommerceWrite
 from agent_platform.harness.tools.idempotency import IdempotencyManager
 from agent_platform.harness.persistence.ports import PersistenceError
 from agent_platform.harness.governance.policy import PolicyEngine
@@ -171,6 +173,7 @@ class ToolExecutor:
 
         # Step 6: Idempotency Key Gate (Atomic reservation & payload check for side-effect tools)
         idem_key = self.idempotency.generate_key(thread_id, call_id)
+        backend_idempotency_key = str(uuid.uuid4()) if tool_spec.side_effect else idem_key
         if tool_spec.side_effect:
             if hasattr(self.idempotency, "begin_execution"):
                 reservation = self.idempotency.begin_execution(
@@ -181,10 +184,19 @@ class ToolExecutor:
                     tool_name=tool_name,
                     call_id=call_id,
                     arguments=args_dict,
-                    backend_idempotency_key=idem_key,
+                    backend_idempotency_key=backend_idempotency_key,
                 )
                 if reservation.action == "replay":
-                    return ToolExecutionResult(output=reservation.output, is_error=False)
+                    cached = reservation.output
+                    if isinstance(cached, str) and cached.startswith("commerce-result-v1:"):
+                        try:
+                            envelope = json.loads(cached[len("commerce-result-v1:"):])
+                            return ToolExecutionResult(output=envelope["output"], is_error=False,
+                                                       commerce_answer=envelope["answer"])
+                        except (ValueError, KeyError, TypeError):
+                            return ToolExecutionResult(output="Không thể xác nhận kết quả đã lưu; cần đối soát.",
+                                                       is_error=True, error_code="unknown_outcome")
+                    return ToolExecutionResult(output=cached, is_error=False)
                 if reservation.action in ("conflict", "in_progress", "unknown_outcome"):
                     return ToolExecutionResult(
                         output=reservation.message or "Idempotency check rejected execution.",
@@ -198,7 +210,7 @@ class ToolExecutor:
         # Step 7: Timed Execution (Backend receives trusted, unmasked business data)
         ctx = ToolContext(
             principal=principal,
-            idempotency_key=idem_key,
+            idempotency_key=backend_idempotency_key,
             thread_id=thread_id,
             run_id=run_id,
             http_client=self.http_client,
@@ -213,8 +225,9 @@ class ToolExecutor:
 
             raw_output = await asyncio.wait_for(exec_coro, timeout=tool_spec.timeout_s)
         except ToolUnavailableError as exc:
+            ambiguous = tool_spec.side_effect and getattr(ctx, "outcome_ambiguous", False)
             if tool_spec.side_effect:
-                if getattr(ctx, "outcome_ambiguous", False) and hasattr(
+                if ambiguous and hasattr(
                     self.idempotency, "mark_unknown_outcome"
                 ):
                     self.idempotency.mark_unknown_outcome(idem_key, error_code="unavailable")
@@ -223,7 +236,7 @@ class ToolExecutor:
             return ToolExecutionResult(
                 output=PIIMasker.mask(str(exc), fail_closed=False),
                 is_error=True,
-                error_code="unavailable",
+                error_code="unknown_outcome" if ambiguous else "unavailable",
             )
         except asyncio.TimeoutError:
             if tool_spec.side_effect and hasattr(self.idempotency, "mark_unknown_outcome"):
@@ -235,7 +248,7 @@ class ToolExecutor:
                     else f"Execution error: Tool '{tool_name}' timed out after {tool_spec.timeout_s}s."
                 ),
                 is_error=True,
-                error_code="timeout",
+                error_code="unknown_outcome" if tool_spec.side_effect else "timeout",
             )
         except PersistenceError:
             raise
@@ -245,10 +258,12 @@ class ToolExecutor:
                     self.idempotency.mark_unknown_outcome(idem_key, error_code="execution_failure")
                 elif hasattr(self.idempotency, "abort_execution"):
                     self.idempotency.abort_execution(idem_key)
+            ambiguous = tool_spec.side_effect and getattr(ctx, "outcome_ambiguous", False)
             return ToolExecutionResult(
-                output=f"Execution error in tool '{tool_name}': {PIIMasker.mask(str(exc), fail_closed=False)}",
+                output=("Không thể xác nhận kết quả thao tác; hãy kiểm tra trạng thái trước khi thử lại."
+                        if ambiguous else f"Execution error in tool '{tool_name}': {PIIMasker.mask(str(exc), fail_closed=False)}"),
                 is_error=True,
-                error_code="execution_failure",
+                error_code="unknown_outcome" if ambiguous else "execution_failure",
             )
 
         # Step 8: Output Sanitization & Escaping (Outputs are verified masked before reaching LLM / State)
@@ -263,11 +278,15 @@ class ToolExecutor:
 
         wrapped_output = f"<tool_output name=\"{tool_name}\">\n{sanitized_str}\n</tool_output>"
 
+        write_answer = (PIIMasker.mask(raw_output["answer"], fail_closed=True)
+                        if tool_spec.side_effect and isinstance(raw_output, ConfirmedCommerceWrite) else None)
+        cached_output = ("commerce-result-v1:" + json.dumps({"output": wrapped_output, "answer": write_answer}, ensure_ascii=False)
+                         if write_answer else wrapped_output)
         if tool_spec.side_effect:
             if hasattr(self.idempotency, "complete_execution"):
-                self.idempotency.complete_execution(idem_key, wrapped_output)
+                self.idempotency.complete_execution(idem_key, cached_output)
             else:
-                self.idempotency.record(idem_key, wrapped_output)
+                self.idempotency.record(idem_key, cached_output)
 
         # Step 9: Tamper-Evident Audit Logging (Inputs are verified masked)
         self.audit_ledger.record_event(
@@ -281,7 +300,7 @@ class ToolExecutor:
             decision="executed",
         )
 
-        commerce_answer = None
+        commerce_answer = write_answer
         if (not tool_spec.side_effect and tool_name in ("query_order_status", "lookup_order")
                 and isinstance(raw_output, ConfirmedOrderStatus)):
             order_id = raw_output.get("order_id")
@@ -292,4 +311,33 @@ class ToolExecutor:
                 commerce_answer = PIIMasker.mask(
                     f"Đơn hàng {order_id} có trạng thái {order_status}.", fail_closed=True
                 )
+        elif not tool_spec.side_effect and isinstance(raw_output, ConfirmedCatalogRead):
+            if tool_name == "lookup_laptop_catalog":
+                products, count, price_field = raw_output["items"], raw_output["total_matched"], "price_vnd"
+            elif tool_name == "get_product_details":
+                products, count, price_field = [raw_output["product"]], 1, "priceVnd"
+            elif tool_name == "compare_products":
+                products, count, price_field = raw_output["comparison"], raw_output["total"], "priceVnd"
+            else:
+                products, count, price_field = [], 0, ""
+            if price_field:
+                lines = [f"Core xác nhận {count} sản phẩm."]
+                for product in products[:10]:
+                    name = " ".join(product["name"].split())[:200]
+                    sku = " ".join(product["sku"].split())[:100]
+                    lines.append(f"{sku}: {name} — {product[price_field]} VNĐ.")
+                if count > 10:
+                    lines.append(f"Hiển thị 10 trong {count} sản phẩm.")
+                commerce_answer = PIIMasker.mask("\n".join(lines), fail_closed=True)
+        elif not tool_spec.side_effect and tool_name == "view_cart" and isinstance(raw_output, ConfirmedCartRead):
+            items = raw_output["items"]
+            lines = [f"Giỏ hàng có {raw_output['total_items']} sản phẩm."]
+            for item in items[:10]:
+                sku = " ".join(item["sku"].split())[:100]
+                name = " ".join(item["name"].split())[:200]
+                lines.append(f"{sku}: {name} — {item['quantity']} x {item['unit_price_vnd']} VNĐ = {item['line_total_vnd']} VNĐ.")
+            if len(items) > 10:
+                lines.append(f"Hiển thị 10 trong {len(items)} dòng sản phẩm.")
+            lines.append(f"Tạm tính: {raw_output['subtotal_vnd']} VNĐ; VAT: {raw_output['vat_vnd']} VNĐ; tổng: {raw_output['total_vnd']} VNĐ.")
+            commerce_answer = PIIMasker.mask("\n".join(lines), fail_closed=True)
         return ToolExecutionResult(output=wrapped_output, is_error=False, commerce_answer=commerce_answer)

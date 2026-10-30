@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Favorite } from './entities/favorite.entity';
 import { AuthService, UserDTO } from '../auth/public-api';
+import { transactionalIdempotency } from '../../shared/idempotency/transactional-idempotency';
 
 @Injectable()
 export class CustomersService {
@@ -11,6 +12,7 @@ export class CustomersService {
     @Optional()
     @InjectRepository(Favorite)
     private readonly favoriteRepo?: Repository<Favorite>,
+    @Optional() private readonly dataSource?: DataSource,
   ) {}
 
   private getRepo(): Repository<Favorite> {
@@ -42,7 +44,18 @@ export class CustomersService {
     variantId: string,
     action: 'add' | 'remove' | 'toggle' = 'toggle',
   ): Promise<{ isFavorited: boolean }> {
-    const repo = this.getRepo();
+    return this.setFavoriteInRepo(this.getRepo(), customerId, variantId, action);
+  }
+
+  async setFavoriteIdempotent(customerId: string, variantId: string, action: 'add' | 'remove' | 'toggle', key: string): Promise<{ isFavorited: boolean }> {
+    if (!this.dataSource?.isInitialized) throw new ServiceUnavailableException('Dịch vụ quản lý yêu thích hiện không khả dụng.');
+    return this.dataSource.transaction('SERIALIZABLE', async manager =>
+      transactionalIdempotency(manager, customerId, 'manage_favorite', key, { variantId, action },
+        () => this.setFavoriteInRepo(manager.getRepository(Favorite), customerId, variantId, action)));
+  }
+
+  private async setFavoriteInRepo(repo: Repository<Favorite>, customerId: string, variantId: string,
+                                  action: 'add' | 'remove' | 'toggle'): Promise<{ isFavorited: boolean }> {
     const existing = await repo.findOne({
       where: { customer_id: customerId, variant_id: variantId },
     });
